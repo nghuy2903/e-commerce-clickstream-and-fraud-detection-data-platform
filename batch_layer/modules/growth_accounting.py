@@ -1,0 +1,2 @@
+"""Growth accounting metrics module."""
+

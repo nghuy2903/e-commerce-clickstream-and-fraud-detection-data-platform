@@ -1,0 +1,6 @@
+pyspark
+apache-flink
+streamlit
+psycopg2
+kafka-python
+chispa
