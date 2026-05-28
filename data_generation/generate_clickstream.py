@@ -1,6 +1,3 @@
-"""
-Minimal clickstream generator entrypoint.
-"""
 import json
 import time
 import random
@@ -58,7 +55,7 @@ def main() -> None:
         
     try:
         while True:
-            is_bot = random.random() > 0.5
+            is_bot = random.random() < 0.05
             event = generate_event(is_bot=is_bot)
             
             producer.send(TOPIC_NAME, event)
