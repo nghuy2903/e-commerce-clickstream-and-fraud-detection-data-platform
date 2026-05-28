@@ -1,0 +1,14 @@
+
+venv/
+.env
+__pycache__/
+*.pyc
+
+kafka_data/
+postgres_data/
+
+batch_layer/warehouse/
+batch_layer/metastore_db/
+batch_layer/derby.log
+*.parquet
+*.json
