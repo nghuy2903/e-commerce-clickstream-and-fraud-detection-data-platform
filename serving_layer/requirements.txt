@@ -1,6 +1,6 @@
 pyspark
 apache-flink
-streamlit
-psycopg2
+streamlit==1.32.0
+psycopg2-binary==2.9.9
 kafka-python
 chispa
