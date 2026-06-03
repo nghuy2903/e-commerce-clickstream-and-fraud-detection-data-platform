@@ -1,46 +1,75 @@
-version: '3'
-
 services:
+
   kafka:
-    image: apache/kafka:3.7.0
-    container_name: kafka-kraft
-    mem_limit: 1024m
-    environment:
-      - KAFKA_NODE_ID=1
-      - KAFKA_PROCESS_ROLES=broker,controller
-      - KAFKA_LISTENERS=PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL://:9092
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
-      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    hostname: kafka
     ports:
       - "9092:9092"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER      
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
-      - kafka_data:/bitnami/kafka
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - banking_net
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka:29092 \
+          --create --if-not-exists \
+          --topic banking_events \
+          --partitions 3 \
+          --replication-factor 1
+        echo "Topic banking_events ready."
+    networks:
+      - banking_net
+    restart: "no"
 
   flink-jobmanager:
-      image: flink:1.19-scala_2.12-java11
-      container_name: flink-jobmanager
-      mem_limit: 512m
-      command: jobmanager
-      environment:
-        - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
-        - |
-          FLINK_PROPERTIES=
-          jobmanager.rpc.address: flink-jobmanager
-      volumes:
-        - ./batch_layer/warehouse:/opt/iceberg/warehouse
-      ports:
-        - "8081:8081"
+    image: flink:1.19-scala_2.12-java11
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+    networks:
+      - banking_net
 
   flink-taskmanager:
     image: flink:1.19-scala_2.12-java11
     container_name: flink-taskmanager
-    mem_limit: 1024m
+    hostname: flink-taskmanager
     command: taskmanager
     depends_on:
       - flink-jobmanager
@@ -49,43 +78,70 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 1
+        taskmanager.numberOfTaskSlots: 2
+    networks:
+      - banking_net
+
+  spark-master:
+    image: bde2020/spark-master:3.3.0-hadoop3.3
+    container_name: spark-master
+    hostname: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
     volumes:
-      - ./batch_layer/warehouse:/opt/iceberg/warehouse
+      - spark_data:/spark/data
+      - ./batch_layer:/app/batch_layer
+    networks:
+      - banking_net
+
+  spark-worker:
+    image: bde2020/spark-worker:3.3.0-hadoop3.3
+    container_name: spark-worker
+    hostname: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - "8082:8081"
+    environment:
+      - "SPARK_MASTER=spark://spark-master:7077"
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=2
+    volumes:
+      - spark_data:/spark/data
+      - ./batch_layer:/app/batch_layer
+    networks:
+      - banking_net
 
   postgres:
-    image: postgres:16
-    container_name: platform-postgres
-    mem_limit: 512m
-    environment:
-      - POSTGRES_USER=platform_user
-      - POSTGRES_PASSWORD=platform_password
-      - POSTGRES_DB=platform_db
-    command:
-      - postgres
-      - -c
-      - shared_buffers=64MB
-      - -c
-      - max_connections=30
+    image: postgres:15
+    container_name: postgres
+    hostname: postgres
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: banking_mlops
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - banking_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d banking_mlops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  streamlit:
-      build:
-        context: ./serving_layer 
-        dockerfile: Dockerfile
-      container_name: platform-streamlit
-      mem_limit: 256m
-      depends_on:
-        - postgres
-      working_dir: /app
-      volumes:
-        - ./serving_layer:/app   
-      ports:
-        - "8501:8501"
+
+networks:
+  banking_net:
+    name: banking_net
+    driver: bridge
 
 volumes:
   kafka_data:
   postgres_data:
+  spark_data:

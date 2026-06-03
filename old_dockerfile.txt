@@ -1,0 +1,91 @@
+version: '3'
+
+services:
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka-kraft
+    mem_limit: 1024m
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_LISTENERS=PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL://:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  flink-jobmanager:
+      image: flink:1.19-scala_2.12-java11
+      container_name: flink-jobmanager
+      mem_limit: 512m
+      command: jobmanager
+      environment:
+        - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+        - |
+          FLINK_PROPERTIES=
+          jobmanager.rpc.address: flink-jobmanager
+      volumes:
+        - ./batch_layer/warehouse:/opt/iceberg/warehouse
+      ports:
+        - "8081:8081"
+
+  flink-taskmanager:
+    image: flink:1.19-scala_2.12-java11
+    container_name: flink-taskmanager
+    mem_limit: 1024m
+    command: taskmanager
+    depends_on:
+      - flink-jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 1
+    volumes:
+      - ./batch_layer/warehouse:/opt/iceberg/warehouse
+
+  postgres:
+    image: postgres:16
+    container_name: platform-postgres
+    mem_limit: 512m
+    environment:
+      - POSTGRES_USER=platform_user
+      - POSTGRES_PASSWORD=platform_password
+      - POSTGRES_DB=platform_db
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=30
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  streamlit:
+      build:
+        context: ./serving_layer 
+        dockerfile: Dockerfile
+      container_name: platform-streamlit
+      mem_limit: 256m
+      depends_on:
+        - postgres
+      working_dir: /app
+      volumes:
+        - ./serving_layer:/app   
+      ports:
+        - "8501:8501"
+
+volumes:
+  kafka_data:
+  postgres_data:
