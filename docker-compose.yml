@@ -91,9 +91,11 @@ services:
       - "7077:7077"
     environment:
       - INIT_DAEMON_STEP=setup_spark
+      - ICEBERG_WAREHOUSE=/app/batch_layer/warehouse
     volumes:
       - spark_data:/spark/data
       - ./batch_layer:/app/batch_layer
+      - ./batch_layer/warehouse:/app/batch_layer/warehouse
     networks:
       - banking_net
 
@@ -109,9 +111,11 @@ services:
       - "SPARK_MASTER=spark://spark-master:7077"
       - SPARK_WORKER_MEMORY=1G
       - SPARK_WORKER_CORES=2
+      - ICEBERG_WAREHOUSE=/app/batch_layer/warehouse
     volumes:
       - spark_data:/spark/data
       - ./batch_layer:/app/batch_layer
+      - ./batch_layer/warehouse:/app/batch_layer/warehouse
     networks:
       - banking_net
 
@@ -127,6 +131,7 @@ services:
       POSTGRES_DB: banking_mlops
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./storage_layer/postgres/01_init_banking_schema.sql:/docker-entrypoint-initdb.d/01_init_banking_schema.sql:ro
     networks:
       - banking_net
     healthcheck:
