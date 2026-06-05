@@ -33,6 +33,7 @@ from pyflink.datastream.connectors.jdbc import (
     JdbcSink,
 )
 from pyflink.datastream.functions import FilterFunction, MapFunction
+from pyflink.common import Row
 
 logging.basicConfig(
     level=logging.INFO,
@@ -174,14 +175,14 @@ class FraudScoringMapper(MapFunction):
 class FraudAlertToJdbcRowMapper(MapFunction):
     """Chuyển FraudAlertRecord → tuple 8 cột cho JDBC sink."""
 
-    def map(self, alert: FraudAlertRecord) -> tuple:
-        return (
+    def map(self, alert: FraudAlertRecord) -> Row:
+        return Row(
             str(uuid.uuid4()),
             alert.user_id,
             alert.source_event_id,
             alert.risk_score,
             alert.risk_level,
-            alert.rule_name,
+            alert.rule_name,    
             alert.alert_message,
             alert.detected_at,
         )
@@ -205,7 +206,7 @@ def _jdbc_insert_sql() -> str:
             rule_name,
             alert_message,
             detected_at
-        ) VALUES (?, ?, ?::uuid, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)
+        ) VALUES (?::uuid, ?, ?::uuid, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)
     """
 
 
@@ -288,7 +289,7 @@ def build_pipeline(env: StreamExecutionEnvironment | None = None) -> StreamExecu
         source_name="kafka-banking-events",
     )
 
-    jdbc_row_type = Types.TUPLE(
+    jdbc_row_type = Types.ROW(
         [
             Types.STRING(),
             Types.STRING(),
@@ -303,7 +304,7 @@ def build_pipeline(env: StreamExecutionEnvironment | None = None) -> StreamExecu
 
     alert_stream = (
         raw_stream.map(FraudScoringMapper(), output_type=Types.PICKLED_BYTE_ARRAY())
-        .filter(IsFraudFilter(), output_type=Types.PICKLED_BYTE_ARRAY())
+        .filter(IsFraudFilter())
         .map(FraudAlertToJdbcRowMapper(), output_type=jdbc_row_type)
     )
 
