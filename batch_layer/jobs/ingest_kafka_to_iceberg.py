@@ -19,21 +19,21 @@ if str(_ROOT) not in sys.path:
 
 from batch_layer.config.iceberg_spark import build_iceberg_spark
 
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
+KAFKA_BOOTSTRAP_SERVERS = "kafka:29092"
 KAFKA_TOPIC = "banking_events"
 RAW_TABLE = "local.raw.raw_banking_events"
-CHECKPOINT_LOCATION = "./spark-warehouse/checkpoints/raw_events"
+CHECKPOINT_LOCATION = "/tmp/checkpoints/raw_events"
 
 def main():
     spark = build_iceberg_spark(app_name="kafka_to_iceberg_ingestion")
     spark.sparkContext.setLogLevel("WARN")
 
-    print(f"Bắt đầu luồng Ingestion từ Kafka ({KAFKA_TOPIC}) vào Iceberg ({RAW_TABLE})...")
+    print(f" Bắt đầu luồng Ingestion từ Kafka ({KAFKA_TOPIC}) vào Iceberg ({RAW_TABLE})...")
 
     # 1. Định nghĩa Schema khớp chính xác với JSON sinh ra từ Layer 1
     json_schema = StructType([
         StructField("event_id", StringType(), True),
-        StructField("timestamp", StringType(), True), # Đọc chuỗi trước để cast sau
+        StructField("timestamp", StringType(), True),
         StructField("user_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("amount", DecimalType(18, 2), True),
@@ -49,7 +49,7 @@ def main():
         .option("startingOffsets", "earliest") \
         .load()
 
-    # 3. Transform: Parse JSON và ép kiểu dữ liệu
+    # 3. Transform: Parse JSON, ép kiểu và TẠO CỘT PHÂN VÙNG (event_date)
     parsed_df = kafka_df.selectExpr("CAST(value AS STRING) as json_str", "topic", "partition", "offset") \
         .select(
             F.from_json(F.col("json_str"), json_schema).alias("data"),
@@ -60,17 +60,33 @@ def main():
         .select("data.*", "kafka_topic", "kafka_partition", "kafka_offset") \
         .withColumn("event_timestamp", F.to_timestamp(F.col("timestamp"))) \
         .withColumn("ingested_at", F.current_timestamp()) \
-        .drop("timestamp") # Bỏ cột string thô, giữ cột event_timestamp
+        .withColumn("event_date", F.to_date(F.col("timestamp"))) \
+        .select(
+            "event_id",
+            "event_timestamp",
+            "user_id",
+            "event_type",
+            "amount",
+            "ip_address",
+            "is_simulated",
+            "kafka_topic",
+            "kafka_partition",
+            "kafka_offset",
+            "ingested_at",
+            "event_date" # BẮT BUỘC PHẢI THÊM CỘT NÀY ĐỂ ICEBERG NHẬN DIỆN PHÂN VÙNG
+        )
 
     # 4. Sink: Ghi dữ liệu liên tục vào Iceberg với Trigger 10 giây
     query = parsed_df.writeStream \
         .format("iceberg") \
         .outputMode("append") \
         .option("checkpointLocation", CHECKPOINT_LOCATION) \
-        .trigger(processingTime="10 seconds") \
-        .toTable(RAW_TABLE)
+        .option("fanout-enabled", "true") \
+        .trigger(processingTime="30 seconds") \
+        .option("path", RAW_TABLE) \
+        .start()
 
-    print("Streaming đang chạy. Bấm Ctrl+C để dừng.")
+    print(" Streaming đang chạy. Bấm Ctrl+C để dừng.")
     query.awaitTermination()
 
 if __name__ == "__main__":
