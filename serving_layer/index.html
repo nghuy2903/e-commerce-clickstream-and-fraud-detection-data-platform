@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fraud Detection System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        <div class="bg-white rounded-xl shadow-lg p-6 border-t-4 border-blue-500">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">📱 Ứng dụng Ngân hàng</h2>
+            
+            <form id="txForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Mã Khách Hàng (User ID)</label>
+                    <input type="text" id="userId" value="user_999" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Số Tiền (VND)</label>
+                    <input type="number" id="amount" value="5000000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">IP Address (Giả lập vị trí)</label>
+                    <input type="text" id="ipAddress" value="192.168.1.100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                </div>
+                
+                <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 font-bold text-lg transition">
+                    💸 THỰC HIỆN CHUYỂN TIỀN
+                </button>
+            </form>
+            <div id="txStatus" class="mt-4 text-center font-medium hidden"></div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg p-6 border-t-4 border-red-500 flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">🚨 Fraud Alert Dashboard</h2>
+                <span class="flex items-center text-sm text-green-600 font-bold">
+                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75 mr-4"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500 mr-2"></span>
+                    Live Syncing
+                </span>
+            </div>
+
+            <div class="flex-1 overflow-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời gian</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số tiền</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Điểm rủi ro</th>
+                        </tr>
+                    </thead>
+                    <tbody id="alertsTableBody" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-6 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300 text-center text-gray-400">
+                [Khu vực chờ tích hợp biểu đồ Accuracy/FPR từ Spark Batch]
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "http://localhost:8000/api";
+
+        // 1. Logic nút Chuyển tiền -> Kafka
+        document.getElementById('txForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                user_id: document.getElementById('userId').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                ip_address: document.getElementById('ipAddress').value
+            };
+
+            const statusDiv = document.getElementById('txStatus');
+            statusDiv.classList.remove('hidden');
+            statusDiv.className = "mt-4 text-center font-medium text-gray-600";
+            statusDiv.innerText = "⏳ Đang gửi giao dịch...";
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/transactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if(res.ok) {
+                    statusDiv.className = "mt-4 text-center font-medium text-green-600";
+                    statusDiv.innerText = "✅ Giao dịch thành công!";
+                } else {
+                    throw new Error("Lỗi API");
+                }
+            } catch (err) {
+                statusDiv.className = "mt-4 text-center font-medium text-red-600";
+                statusDiv.innerText = "❌ Không thể kết nối API!";
+            }
+        });
+
+        // 2. Logic Polling -> Lấy cảnh báo từ Postgres
+        async function fetchAlerts() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/alerts`);
+                const result = await res.json();
+                
+                if (result.status === "success" && result.data.length > 0) {
+                    const tbody = document.getElementById('alertsTableBody');
+                    tbody.innerHTML = ''; // Xóa cũ
+                    
+                    result.data.forEach(alert => {
+                        const row = document.createElement('tr');
+                        // Nếu điểm risk_score > 80 (như threshold của bạn), bôi đỏ
+                        const isHighRisk = alert.risk_score > 80;
+                        row.className = isHighRisk ? "bg-red-50" : "";
+                        
+                        row.innerHTML = `
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${alert.alert_time}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${alert.user_id}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${alert.amount.toLocaleString()} đ</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold ${isHighRisk ? 'text-red-600' : 'text-orange-500'}">${alert.risk_score}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (err) {
+                console.error("Lỗi kéo dữ liệu alerts:", err);
+            }
+        }
+
+        // Cứ 2 giây gọi API lấy cảnh báo 1 lần (Mô phỏng Real-time)
+        setInterval(fetchAlerts, 2000);
+        fetchAlerts(); // Gọi lần đầu ngay khi load web
+    </script>
+</body>
+</html>
