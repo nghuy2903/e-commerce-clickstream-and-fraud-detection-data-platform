@@ -77,21 +77,22 @@ def create_account_history_scd(spark) -> None:
     """
     SCD Type 2 — lịch sử thay đổi balance / status tài khoản sau mỗi micro-batch.
     (Hàm days() vẫn hoạt động bình thường cho Batch Processing nên được giữ nguyên)
+    Đã gỡ bỏ ràng buộc NOT NULL để tương thích với quá trình transform của Spark DataFrame.
     """
     spark.sql(
         f"""
         CREATE OR REPLACE TABLE {ACCOUNT_HISTORY_TABLE} (
-            account_id          STRING          NOT NULL,
-            user_id             STRING          NOT NULL,
-            balance             DECIMAL(18, 2)  NOT NULL,
-            account_status      STRING          NOT NULL COMMENT 'ACTIVE|WARNING|LOCKED|SUSPENDED',
+            account_id          STRING,
+            user_id             STRING,
+            balance             DECIMAL(18, 2),
+            account_status      STRING          COMMENT 'ACTIVE|WARNING|LOCKED|SUSPENDED',
             status_reason       STRING,
-            valid_from          TIMESTAMP       NOT NULL,
+            valid_from          TIMESTAMP,
             valid_to            TIMESTAMP       COMMENT 'NULL = đang mở (current row)',
-            is_current          BOOLEAN         NOT NULL,
+            is_current          BOOLEAN,
             source_event_id     STRING          COMMENT 'event_id kích hoạt phiên bản mới',
             batch_id            STRING          COMMENT 'Spark micro-batch / job run id',
-            created_at          TIMESTAMP       NOT NULL
+            created_at          TIMESTAMP
         )
         USING iceberg
         PARTITIONED BY (days(valid_from))
@@ -103,7 +104,6 @@ def create_account_history_scd(spark) -> None:
         )
         """
     )
-
 
 def main() -> None:
     spark = build_iceberg_spark(app_name="init_iceberg_tables")
