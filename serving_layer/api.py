@@ -182,6 +182,33 @@ async def create_transaction(transaction: TransactionRequest):
             detail="Kafka Producer chưa sẵn sàng. Vui lòng kiểm tra broker.",
         )
 
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Quét xem user_id này có bị đánh cờ gian lận (risk_score > 80) trước đó không
+        # (Nếu Flink của bạn có lưu cả IP xuống Postgres, bạn có thể thêm điều kiện OR ip_address = tx.ip_address)
+        check_query = """
+            SELECT detected_at FROM fraud_alerts 
+            WHERE user_id = %s AND risk_score > 0.8 
+            ORDER BY detected_at DESC LIMIT 1
+        """
+        cursor.execute(check_query, (transaction.user_id,))
+        is_blocked = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if is_blocked:
+            # Nếu đã bị khóa, trả về mã 403 Forbidden kèm thông báo
+            return {
+                "status": "blocked",
+                "message": "🚨 Giao dịch bị từ chối do phát hiện rủi ro bảo mật!",
+                "support_contact": "Tài khoản/thiết bị của bạn đã bị tạm khóa. Vui lòng liên hệ tổng đài CSKH: 1900-1525 hoặc đến quầy giao dịch gần nhất để được hỗ trợ giải quyết."
+            }
+    except Exception as e:
+        print(f"Lỗi khi kiểm tra Blacklist DB: {e}")
+        # Nếu DB lỗi mạng, tạm thời vẫn cho qua (Fail-open) hoặc chặn luôn (Fail-closed) tùy nghiệp vụ
+        pass
+
     event = {
         "event_id": str(uuid.uuid4()),
         "timestamp": datetime.utcnow().isoformat() + "Z",

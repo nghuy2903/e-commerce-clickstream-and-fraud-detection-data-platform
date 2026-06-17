@@ -28,3 +28,6 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "uvicorn serving_l
 
 Write-Host "`n✅ HỆ THỐNG ĐÃ SẴN SÀNG!" -ForegroundColor Green
 Write-Host "👉 Hãy click đúp vào file serving_layer/index.html để trải nghiệm." -ForegroundColor White
+
+#6. Chạy sql trong warehouse
+# docker exec spark-master /spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.4.3 /app/batch_layer/jobs/export_warehouse.py

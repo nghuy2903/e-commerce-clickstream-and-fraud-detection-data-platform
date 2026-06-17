@@ -617,7 +617,7 @@
                 const payload = {
                     user_id: state.session.userId,
                     amount: amount,
-                    ip_address: getEffectiveIpAddress(),
+                    ip_address: await getEffectiveIpAddress(), // Lưu ý: có thể cần await nếu hàm này là async
                     is_simulated: isSimulated,
                 };
 
@@ -630,12 +630,33 @@
 
                     const result = await response.json();
 
-                    if (response.ok) {
-                        return { success: true, eventId: result.event_id };
+                    if (result.status === "blocked") {
+                        // 1. Bật thông báo khẩn cấp
+                        showToast(result.message, 'error');
+                        alert(`🚨 TÀI KHOẢN BỊ KHÓA!\n\n${result.message}\n${result.support_contact}`);
+                        
+                        // 2. Đóng băng toàn bộ các nút thao tác giao dịch
+                        elements.transferSubmitBtn.disabled = true;
+                        elements.transferSubmitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                        elements.transferSubmitBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                        elements.transferSubmitBtn.innerHTML = "🔒 BỊ KHÓA";
+
+                        if (elements.demoSpamBtn) elements.demoSpamBtn.disabled = true;
+                        if (elements.demoHugeBtn) elements.demoHugeBtn.disabled = true;
+
+                        return { success: false, isBlocked: true, message: result.message };
+                    }
+                    // ==========================================
+
+                    // Xử lý thành công
+                    if (response.ok && result.status === "success") {
+                        return { success: true, eventId: result.event_id, message: result.message };
                     }
 
-                    return { success: false, message: result.detail || 'Giao dịch bị từ chối' };
+                    // Xử lý lỗi thông thường
+                    return { success: false, message: result.detail || result.message || 'Giao dịch bị từ chối' };
                 } catch (error) {
+                    console.error(error);
                     return { success: false, message: 'Không thể kết nối API backend' };
                 } finally {
                     if (!allowConcurrent) {
