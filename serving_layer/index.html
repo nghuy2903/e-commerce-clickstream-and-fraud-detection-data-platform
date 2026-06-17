@@ -3,135 +3,986 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fraud Detection System</title>
+    <title>SecureBank — Fraud Detection Platform</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Roboto', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                        },
+                    },
+                    animation: {
+                        'pulse-risk': 'pulseRisk 1.5s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        pulseRisk: {
+                            '0%, 100%': { backgroundColor: 'rgb(254 242 242)' },
+                            '50%': { backgroundColor: 'rgb(254 202 202)' },
+                        },
+                    },
+                },
+            },
+        };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        .view-hidden { display: none !important; }
+        .toast-enter { animation: slideIn 0.3s ease-out forwards; }
+        .toast-exit { animation: slideOut 0.3s ease-in forwards; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 45%, #312e81 100%);
+        }
+    </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-8">
-    <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        <div class="bg-white rounded-xl shadow-lg p-6 border-t-4 border-blue-500">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">📱 Ứng dụng Ngân hàng</h2>
-            
-            <form id="txForm" class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Mã Khách Hàng (User ID)</label>
-                    <input type="text" id="userId" value="user_999" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Số Tiền (VND)</label>
-                    <input type="number" id="amount" value="5000000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">IP Address (Giả lập vị trí)</label>
-                    <input type="text" id="ipAddress" value="192.168.1.100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
-                </div>
-                
-                <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 font-bold text-lg transition">
-                    💸 THỰC HIỆN CHUYỂN TIỀN
-                </button>
-            </form>
-            <div id="txStatus" class="mt-4 text-center font-medium hidden"></div>
-        </div>
+<body class="font-sans antialiased text-slate-800 bg-slate-50 min-h-screen">
 
-        <div class="bg-white rounded-xl shadow-lg p-6 border-t-4 border-red-500 flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">🚨 Fraud Alert Dashboard</h2>
-                <span class="flex items-center text-sm text-green-600 font-bold">
-                    <span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75 mr-4"></span>
-                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500 mr-2"></span>
-                    Live Syncing
-                </span>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-3 w-full max-w-sm pointer-events-none"></div>
+
+    <!-- ==================== LOGIN VIEW ==================== -->
+    <section id="loginView" class="gradient-bg min-h-screen flex items-center justify-center p-6">
+        <div class="w-full max-w-md">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/10 backdrop-blur border border-white/20 mb-4">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                </div>
+                <h1 class="text-3xl font-bold text-white tracking-tight">SecureBank</h1>
+                <p class="text-blue-200 mt-2 text-sm">Hệ thống Phát hiện Gian lận Ngân hàng Thời gian thực</p>
             </div>
 
-            <div class="flex-1 overflow-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời gian</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số tiền</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Điểm rủi ro</th>
-                        </tr>
-                    </thead>
-                    <tbody id="alertsTableBody" class="bg-white divide-y divide-gray-200">
-                        </tbody>
-                </table>
-            </div>
-            
-            <div class="mt-6 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300 text-center text-gray-400">
-                [Khu vực chờ tích hợp biểu đồ Accuracy/FPR từ Spark Batch]
+            <div class="bg-white rounded-xl shadow-md p-8">
+                <h2 class="text-xl font-semibold text-slate-800 mb-1">Đăng nhập</h2>
+                <p class="text-sm text-slate-500 mb-6">Truy cập tài khoản demo để trải nghiệm hệ thống</p>
+
+                <form id="loginForm" class="space-y-5">
+                    <div>
+                        <label for="loginUsername" class="block text-sm font-medium text-slate-700 mb-1.5">Tên đăng nhập</label>
+                        <input type="text" id="loginUsername" autocomplete="username" required
+                               placeholder="customer1 hoặc admin1"
+                               class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition">
+                    </div>
+                    <div>
+                        <label for="loginPassword" class="block text-sm font-medium text-slate-700 mb-1.5">Mật khẩu</label>
+                        <input type="password" id="loginPassword" autocomplete="current-password" required
+                               placeholder="password"
+                               class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition">
+                    </div>
+                    <button type="submit" id="loginSubmitBtn"
+                            class="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold py-3 shadow-md transition active:scale-[0.98]">
+                        Đăng nhập
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-slate-100">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Tài khoản Demo</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" data-demo-user="customer1"
+                                class="demo-login-btn rounded-xl border border-slate-200 p-3 text-left hover:border-brand-500 hover:bg-brand-50 transition">
+                            <span class="block text-xs text-slate-400">Khách hàng</span>
+                            <span class="block text-sm font-semibold text-slate-700">customer1</span>
+                        </button>
+                        <button type="button" data-demo-user="admin1"
+                                class="demo-login-btn rounded-xl border border-slate-200 p-3 text-left hover:border-brand-500 hover:bg-brand-50 transition">
+                            <span class="block text-xs text-slate-400">Quản trị viên</span>
+                            <span class="block text-sm font-semibold text-slate-700">admin1</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
+    </section>
+
+    <!-- ==================== USER BANKING VIEW ==================== -->
+    <section id="userView" class="view-hidden min-h-screen bg-slate-50">
+        <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+            <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-800">SecureBank</h1>
+                        <p class="text-xs text-slate-500">Internet Banking</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-sm font-semibold text-slate-700" id="userDisplayName">—</p>
+                        <p class="text-xs text-slate-400" id="userAccountLabel">—</p>
+                    </div>
+                    <button id="userLogoutBtn"
+                            class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 transition">
+                        Đăng xuất
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+            <!-- Balance Card -->
+            <div class="rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 text-white p-6 shadow-md">
+                <p class="text-blue-200 text-sm font-medium">Số dư khả dụng</p>
+                <p class="text-3xl font-bold mt-1 tracking-tight">₫ 125.000.000</p>
+                <div class="mt-4 flex items-center gap-2 text-sm text-blue-200">
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        Tài khoản hoạt động
+                    </span>
+                    <span class="text-blue-300">·</span>
+                    <span id="userIpDisplay">Đang lấy IP...</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <!-- Transfer Form -->
+                <div class="lg:col-span-3 bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-lg font-semibold text-slate-800 mb-1">Chuyển tiền</h2>
+                    <p class="text-sm text-slate-500 mb-6">Giao dịch sẽ được xử lý qua pipeline phát hiện gian lận real-time</p>
+
+                    <form id="transferForm" class="space-y-5">
+                        <div>
+                            <label for="recipientAccount" class="block text-sm font-medium text-slate-700 mb-1.5">Tài khoản nhận</label>
+                            <input type="text" id="recipientAccount" value="ACC-8847291" required
+                                   class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+                        </div>
+                        <div>
+                            <label for="transferAmount" class="block text-sm font-medium text-slate-700 mb-1.5">Số tiền (VND)</label>
+                            <input type="number" id="transferAmount" value="5000000" min="1" required
+                                   class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+                        </div>
+                        <div>
+                            <label for="transferNote" class="block text-sm font-medium text-slate-700 mb-1.5">Nội dung chuyển khoản</label>
+                            <input type="text" id="transferNote" value="Chuyen tien"
+                                   class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm shadow-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none">
+                        </div>
+                        <button type="submit" id="transferSubmitBtn"
+                                class="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold py-3.5 shadow-md transition active:scale-[0.98] flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                            Thực hiện chuyển tiền
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Fraud Demo Triggers -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-6 border border-amber-100">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        <h2 class="text-lg font-semibold text-slate-800">Kịch bản Demo Gian lận</h2>
+                    </div>
+                    <p class="text-sm text-slate-500 mb-5">Kích hoạt các luật phát hiện trong pipeline Flink</p>
+
+                    <div class="space-y-3">
+                        <button type="button" id="demoSpamBtn"
+                                class="w-full rounded-xl border-2 border-orange-200 bg-orange-50 hover:bg-orange-100 px-4 py-3 text-left transition group">
+                            <span class="block text-sm font-semibold text-orange-700 group-hover:text-orange-800">Demo Spam Giao Dịch</span>
+                            <span class="block text-xs text-orange-500 mt-0.5">Gửi 18 giao dịch nhỏ trong 3 giây — Velocity Check</span>
+                        </button>
+
+                        <button type="button" id="demoHugeBtn"
+                                class="w-full rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 px-4 py-3 text-left transition group">
+                            <span class="block text-sm font-semibold text-red-700 group-hover:text-red-800">Demo Giao Dịch Khủng</span>
+                            <span class="block text-xs text-red-500 mt-0.5">50 tỷ VND — kiểm tra hạn mức rủi ro</span>
+                        </button>
+
+                        <label class="flex items-start gap-3 rounded-xl border-2 border-purple-200 bg-purple-50 px-4 py-3 cursor-pointer hover:bg-purple-100 transition">
+                            <input type="checkbox" id="spoofVpnToggle"
+                                   class="mt-1 w-4 h-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500">
+                            <span>
+                                <span class="block text-sm font-semibold text-purple-700">Kích hoạt Giả lập VPN/IP Lạ</span>
+                                <span class="block text-xs text-purple-500 mt-0.5">Ghi đè IP bằng 203.0.113.195 — Impossible Travel</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div id="demoProgress" class="hidden mt-4 rounded-xl bg-slate-50 p-3">
+                        <div class="flex justify-between text-xs text-slate-500 mb-1">
+                            <span id="demoProgressLabel">Đang gửi...</span>
+                            <span id="demoProgressCount">0/0</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-2">
+                            <div id="demoProgressBar" class="bg-brand-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </section>
+
+    <!-- ==================== ADMIN DASHBOARD VIEW ==================== -->
+    <section id="adminView" class="view-hidden min-h-screen bg-slate-100">
+        <header class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-400/30 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold">Fraud Operations Center</h1>
+                        <p class="text-xs text-slate-400">Admin Dashboard — OLAP Monitoring</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span id="adminLiveBadge" class="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                        <span class="relative flex h-2.5 w-2.5">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                        </span>
+                        Live
+                    </span>
+                    <button id="adminLogoutBtn"
+                            class="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition">
+                        Đăng xuất
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-red-500">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tổng cảnh báo</p>
+                    <p id="statTotalAlerts" class="text-3xl font-bold text-slate-800 mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-orange-500">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cảnh báo rủi ro cao</p>
+                    <p id="statHighRisk" class="text-3xl font-bold text-slate-800 mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-purple-500">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tỷ lệ gian lận</p>
+                    <p id="statFraudRate" class="text-3xl font-bold text-slate-800 mt-1">—</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-5 border-l-4 border-emerald-500">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Trạng thái Pipeline</p>
+                    <p id="statPipeline" class="text-3xl font-bold text-emerald-600 mt-1 capitalize">—</p>
+                </div>
+            </div>
+
+            <!-- Bottom Grid: Alerts + Chart -->
+            <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                <!-- Alerts Table -->
+                <div class="xl:col-span-3 bg-white rounded-xl shadow-md flex flex-col min-h-[480px]">
+                    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold text-slate-800">Danh sách Cảnh báo Gian lận</h2>
+                            <p class="text-xs text-slate-400 mt-0.5">Cập nhật mỗi 2 giây qua PostgreSQL</p>
+                        </div>
+                        <span id="alertsLastSync" class="text-xs text-slate-400">—</span>
+                    </div>
+                    <div class="flex-1 overflow-auto">
+                        <table class="min-w-full divide-y divide-slate-100">
+                            <thead class="bg-slate-50 sticky top-0">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Thời gian</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">User ID</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Mức rủi ro</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Điểm</th>
+                                    <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Luật</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alertsTableBody" class="divide-y divide-slate-50">
+                                <tr>
+                                    <td colspan="5" class="px-4 py-12 text-center text-sm text-slate-400">
+                                        Đang tải dữ liệu cảnh báo...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- MLOps Chart -->
+                <div class="xl:col-span-2 bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[480px]">
+                    <div class="mb-4">
+                        <h2 class="text-lg font-semibold text-slate-800">MLOps — Champion vs Challenger</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Accuracy theo thời gian (7 ngày gần nhất)</p>
+                    </div>
+                    <div class="flex-1 relative min-h-[320px]">
+                        <canvas id="mlopsChart"></canvas>
+                    </div>
+                    <div class="mt-4 flex items-center justify-center gap-6 text-xs">
+                        <span class="flex items-center gap-2">
+                            <span class="w-3 h-0.5 bg-blue-500 rounded"></span>
+                            <span class="text-slate-600">Champion Model</span>
+                        </span>
+                        <span class="flex items-center gap-2">
+                            <span class="w-3 h-0.5 bg-purple-500 rounded border-dashed"></span>
+                            <span class="text-slate-600">Challenger Model</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </section>
 
     <script>
-        const API_BASE_URL = "http://localhost:8000/api";
+        (function BankingFraudSPA() {
+            'use strict';
 
-        // 1. Logic nút Chuyển tiền -> Kafka
-        document.getElementById('txForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const payload = {
-                user_id: document.getElementById('userId').value,
-                amount: parseFloat(document.getElementById('amount').value),
-                ip_address: document.getElementById('ipAddress').value
+            const API_BASE_URL = window.location.origin.includes('localhost')
+                ? 'http://localhost:8000/api'
+                : `${window.location.origin}/api`;
+
+            const SPOOF_FOREIGN_IP = '203.0.113.195';
+            const HUGE_TRANSACTION_AMOUNT = 50000000000;
+            const SPAM_TRANSACTION_COUNT = 18;
+            const SPAM_DURATION_MS = 3000;
+            const SPAM_SMALL_AMOUNT = 150000;
+            const POLL_INTERVAL_MS = 2000;
+            const SESSION_STORAGE_KEY = 'securebank_session';
+
+            const DEMO_ACCOUNTS = {
+                customer1: { password: 'password', role: 'user', userId: 'user_999', displayName: 'Nguyễn Văn Khách' },
+                admin1: { password: 'password', role: 'admin', userId: 'admin', displayName: 'Quản trị viên Hệ thống' },
             };
 
-            const statusDiv = document.getElementById('txStatus');
-            statusDiv.classList.remove('hidden');
-            statusDiv.className = "mt-4 text-center font-medium text-gray-600";
-            statusDiv.innerText = "⏳ Đang gửi giao dịch...";
+            const state = {
+                view: 'login',
+                session: null,
+                publicIp: null,
+                alertsPollingTimer: null,
+                statsPollingTimer: null,
+                mlopsChart: null,
+                knownAlertIds: new Set(),
+                isSendingTransaction: false,
+            };
 
-            try {
-                const res = await fetch(`${API_BASE_URL}/transactions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if(res.ok) {
-                    statusDiv.className = "mt-4 text-center font-medium text-green-600";
-                    statusDiv.innerText = "✅ Giao dịch thành công!";
+            const elements = {
+                loginView: document.getElementById('loginView'),
+                userView: document.getElementById('userView'),
+                adminView: document.getElementById('adminView'),
+                loginForm: document.getElementById('loginForm'),
+                loginUsername: document.getElementById('loginUsername'),
+                loginPassword: document.getElementById('loginPassword'),
+                loginSubmitBtn: document.getElementById('loginSubmitBtn'),
+                userDisplayName: document.getElementById('userDisplayName'),
+                userAccountLabel: document.getElementById('userAccountLabel'),
+                userIpDisplay: document.getElementById('userIpDisplay'),
+                userLogoutBtn: document.getElementById('userLogoutBtn'),
+                adminLogoutBtn: document.getElementById('adminLogoutBtn'),
+                transferForm: document.getElementById('transferForm'),
+                transferAmount: document.getElementById('transferAmount'),
+                transferSubmitBtn: document.getElementById('transferSubmitBtn'),
+                demoSpamBtn: document.getElementById('demoSpamBtn'),
+                demoHugeBtn: document.getElementById('demoHugeBtn'),
+                spoofVpnToggle: document.getElementById('spoofVpnToggle'),
+                demoProgress: document.getElementById('demoProgress'),
+                demoProgressLabel: document.getElementById('demoProgressLabel'),
+                demoProgressCount: document.getElementById('demoProgressCount'),
+                demoProgressBar: document.getElementById('demoProgressBar'),
+                alertsTableBody: document.getElementById('alertsTableBody'),
+                alertsLastSync: document.getElementById('alertsLastSync'),
+                statTotalAlerts: document.getElementById('statTotalAlerts'),
+                statHighRisk: document.getElementById('statHighRisk'),
+                statFraudRate: document.getElementById('statFraudRate'),
+                statPipeline: document.getElementById('statPipeline'),
+                adminLiveBadge: document.getElementById('adminLiveBadge'),
+                toastContainer: document.getElementById('toastContainer'),
+            };
+
+            function saveSession(session) {
+                try {
+                    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+                } catch (error) {
+                    console.warn('Không lưu được session:', error);
+                }
+            }
+
+            function loadSession() {
+                try {
+                    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            function clearSession() {
+                localStorage.removeItem(SESSION_STORAGE_KEY);
+            }
+
+            function showToast(message, type) {
+                const typeStyles = {
+                    success: 'bg-emerald-600 border-emerald-500',
+                    error: 'bg-red-600 border-red-500',
+                    warning: 'bg-amber-500 border-amber-400',
+                    info: 'bg-slate-700 border-slate-600',
+                };
+
+                const toast = document.createElement('div');
+                toast.className = `toast-enter pointer-events-auto rounded-xl ${typeStyles[type] || typeStyles.info} text-white px-4 py-3 shadow-md border text-sm font-medium flex items-start gap-2`;
+                toast.innerHTML = `
+                    <span class="flex-1">${message}</span>
+                    <button type="button" class="opacity-70 hover:opacity-100 text-lg leading-none">&times;</button>
+                `;
+
+                const closeButton = toast.querySelector('button');
+                const removeToast = function () {
+                    toast.classList.remove('toast-enter');
+                    toast.classList.add('toast-exit');
+                    setTimeout(function () { toast.remove(); }, 280);
+                };
+
+                closeButton.addEventListener('click', removeToast);
+                elements.toastContainer.appendChild(toast);
+                setTimeout(removeToast, 5000);
+            }
+
+            function setView(viewName) {
+                state.view = viewName;
+                elements.loginView.classList.toggle('view-hidden', viewName !== 'login');
+                elements.userView.classList.toggle('view-hidden', viewName !== 'user');
+                elements.adminView.classList.toggle('view-hidden', viewName !== 'admin');
+
+                if (viewName === 'admin') {
+                    startAdminPolling();
                 } else {
-                    throw new Error("Lỗi API");
+                    stopAdminPolling();
                 }
-            } catch (err) {
-                statusDiv.className = "mt-4 text-center font-medium text-red-600";
-                statusDiv.innerText = "❌ Không thể kết nối API!";
             }
-        });
 
-        // 2. Logic Polling -> Lấy cảnh báo từ Postgres
-        async function fetchAlerts() {
-            try {
-                const res = await fetch(`${API_BASE_URL}/alerts`);
-                const result = await res.json();
-                
-                if (result.status === "success" && result.data.length > 0) {
-                    const tbody = document.getElementById('alertsTableBody');
-                    tbody.innerHTML = ''; // Xóa cũ
-                    
-                    result.data.forEach(alert => {
-                        const row = document.createElement('tr');
-                        // Nếu điểm risk_score > 80 (như threshold của bạn), bôi đỏ
-                        const isHighRisk = alert.risk_score > 80;
-                        row.className = isHighRisk ? "bg-red-50" : "";
-                        
-                        row.innerHTML = `
-                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${alert.alert_time}</td>
-                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${alert.user_id}</td>
-                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">${alert.amount.toLocaleString()} đ</td>
-                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold ${isHighRisk ? 'text-red-600' : 'text-orange-500'}">${alert.risk_score}</td>
-                        `;
-                        tbody.appendChild(row);
+            function getEffectiveIpAddress() {
+                if (elements.spoofVpnToggle.checked) {
+                    return SPOOF_FOREIGN_IP;
+                }
+                return state.publicIp || '0.0.0.0';
+            }
+
+            async function fetchPublicIp() {
+                try {
+                    const response = await fetch('https://api.ipify.org?format=json');
+                    if (!response.ok) {
+                        throw new Error('ipify request failed');
+                    }
+                    const data = await response.json();
+                    state.publicIp = data.ip;
+                    updateIpDisplay();
+                } catch (error) {
+                    console.error('Không lấy được public IP:', error);
+                    state.publicIp = null;
+                    elements.userIpDisplay.textContent = 'IP: Không xác định';
+                    showToast('Không lấy được IP công cộng. Giao dịch vẫn có thể gửi với IP dự phòng.', 'warning');
+                }
+            }
+
+            function updateIpDisplay() {
+                if (!elements.userIpDisplay) {
+                    return;
+                }
+                const effectiveIp = getEffectiveIpAddress();
+                const isSpoofed = elements.spoofVpnToggle.checked;
+                if (isSpoofed) {
+                    elements.userIpDisplay.textContent = `IP gửi đi: ${effectiveIp} (VPN giả lập)`;
+                } else if (state.publicIp) {
+                    elements.userIpDisplay.textContent = `IP thiết bị: ${state.publicIp}`;
+                }
+            }
+
+            async function login(username, password) {
+                elements.loginSubmitBtn.disabled = true;
+                elements.loginSubmitBtn.textContent = 'Đang xác thực...';
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username, password: password }),
                     });
-                }
-            } catch (err) {
-                console.error("Lỗi kéo dữ liệu alerts:", err);
-            }
-        }
 
-        // Cứ 2 giây gọi API lấy cảnh báo 1 lần (Mô phỏng Real-time)
-        setInterval(fetchAlerts, 2000);
-        fetchAlerts(); // Gọi lần đầu ngay khi load web
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.detail || 'Đăng nhập thất bại');
+                    }
+
+                    state.session = {
+                        token: result.token,
+                        username: result.username,
+                        role: result.role,
+                        userId: result.user_id,
+                        displayName: result.display_name,
+                    };
+
+                    saveSession(state.session);
+                    navigateAfterLogin();
+                    showToast(`Chào mừng, ${result.display_name}!`, 'success');
+                } catch (error) {
+                    const localAccount = DEMO_ACCOUNTS[username];
+                    if (localAccount && localAccount.password === password) {
+                        state.session = {
+                            token: 'local-' + Date.now(),
+                            username: username,
+                            role: localAccount.role,
+                            userId: localAccount.userId,
+                            displayName: localAccount.displayName,
+                        };
+                        saveSession(state.session);
+                        navigateAfterLogin();
+                        showToast(`Chào mừng, ${localAccount.displayName}! (offline mode)`, 'info');
+                    } else {
+                        showToast(error.message || 'Đăng nhập thất bại', 'error');
+                    }
+                } finally {
+                    elements.loginSubmitBtn.disabled = false;
+                    elements.loginSubmitBtn.textContent = 'Đăng nhập';
+                }
+            }
+
+            function navigateAfterLogin() {
+                if (!state.session) {
+                    setView('login');
+                    return;
+                }
+
+                if (state.session.role === 'admin') {
+                    setView('admin');
+                } else {
+                    elements.userDisplayName.textContent = state.session.displayName;
+                    elements.userAccountLabel.textContent = `Mã KH: ${state.session.userId}`;
+                    updateIpDisplay();
+                    setView('user');
+                }
+            }
+
+            async function logout() {
+                if (state.session && state.session.token && !state.session.token.startsWith('local-')) {
+                    try {
+                        await fetch(`${API_BASE_URL}/auth/logout`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: state.session.token }),
+                        });
+                    } catch (error) {
+                        console.warn('Logout API lỗi:', error);
+                    }
+                }
+
+                state.session = null;
+                clearSession();
+                stopAdminPolling();
+                setView('login');
+                elements.loginUsername.value = '';
+                elements.loginPassword.value = '';
+                showToast('Đã đăng xuất thành công', 'info');
+            }
+
+            async function sendTransaction(amount, isSimulated, allowConcurrent) {
+                if (!state.session || state.session.role !== 'user') {
+                    showToast('Phiên đăng nhập không hợp lệ', 'error');
+                    return { success: false };
+                }
+
+                if (!allowConcurrent && state.isSendingTransaction) {
+                    return { success: false, skipped: true };
+                }
+
+                if (!allowConcurrent) {
+                    state.isSendingTransaction = true;
+                }
+
+                const payload = {
+                    user_id: state.session.userId,
+                    amount: amount,
+                    ip_address: getEffectiveIpAddress(),
+                    is_simulated: isSimulated,
+                };
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/transactions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        return { success: true, eventId: result.event_id };
+                    }
+
+                    return { success: false, message: result.detail || 'Giao dịch bị từ chối' };
+                } catch (error) {
+                    return { success: false, message: 'Không thể kết nối API backend' };
+                } finally {
+                    if (!allowConcurrent) {
+                        state.isSendingTransaction = false;
+                    }
+                }
+            }
+
+            async function handleTransferSubmit(event) {
+                event.preventDefault();
+
+                const amount = parseFloat(elements.transferAmount.value);
+                if (isNaN(amount) || amount <= 0) {
+                    showToast('Số tiền không hợp lệ', 'error');
+                    return;
+                }
+
+                elements.transferSubmitBtn.disabled = true;
+                elements.transferSubmitBtn.textContent = 'Đang xử lý...';
+
+                const result = await sendTransaction(amount, false);
+
+                if (result.success) {
+                    showToast(`Chuyển tiền thành công! Mã giao dịch: ${result.eventId.slice(0, 8)}...`, 'success');
+                } else {
+                    showToast(result.message || 'Giao dịch bị từ chối bởi hệ thống', 'error');
+                }
+
+                elements.transferSubmitBtn.disabled = false;
+                elements.transferSubmitBtn.innerHTML = `
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    Thực hiện chuyển tiền
+                `;
+            }
+
+            async function runSpamDemo() {
+                elements.demoSpamBtn.disabled = true;
+                elements.demoHugeBtn.disabled = true;
+                elements.demoProgress.classList.remove('hidden');
+
+                let successCount = 0;
+                let failCount = 0;
+                const total = SPAM_TRANSACTION_COUNT;
+                const delayMs = Math.floor(SPAM_DURATION_MS / total);
+
+                elements.demoProgressLabel.textContent = 'Đang spam giao dịch...';
+                elements.demoProgressCount.textContent = `0/${total}`;
+
+                for (let index = 0; index < total; index++) {
+                    const result = await sendTransaction(SPAM_SMALL_AMOUNT + index * 1000, true, true);
+                    if (result.success) {
+                        successCount++;
+                    } else if (!result.skipped) {
+                        failCount++;
+                    }
+
+                    const progress = Math.round(((index + 1) / total) * 100);
+                    elements.demoProgressBar.style.width = `${progress}%`;
+                    elements.demoProgressCount.textContent = `${index + 1}/${total}`;
+
+                    if (index < total - 1) {
+                        await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
+                    }
+                }
+
+                elements.demoProgress.classList.add('hidden');
+                elements.demoSpamBtn.disabled = false;
+                elements.demoHugeBtn.disabled = false;
+
+                if (failCount === 0) {
+                    showToast(`Demo Spam hoàn tất: ${successCount}/${total} giao dịch đã gửi — kiểm tra Velocity Check`, 'warning');
+                } else {
+                    showToast(`Demo Spam: ${successCount} thành công, ${failCount} thất bại`, 'warning');
+                }
+            }
+
+            async function runHugeDemo() {
+                elements.transferAmount.value = HUGE_TRANSACTION_AMOUNT;
+                elements.demoHugeBtn.disabled = true;
+                elements.transferSubmitBtn.disabled = true;
+
+                showToast('Đang gửi giao dịch khủng 50 tỷ VND...', 'warning');
+
+                const result = await sendTransaction(HUGE_TRANSACTION_AMOUNT, true);
+
+                if (result.success) {
+                    showToast('Giao dịch khủng đã gửi — chờ pipeline đánh giá hạn mức rủi ro', 'success');
+                } else {
+                    showToast(result.message || 'Giao dịch khủng bị từ chối', 'error');
+                }
+
+                elements.demoHugeBtn.disabled = false;
+                elements.transferSubmitBtn.disabled = false;
+            }
+
+            function renderAlertsTable(alerts) {
+                if (!alerts || alerts.length === 0) {
+                    elements.alertsTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="px-4 py-12 text-center text-sm text-slate-400">
+                                Chưa có cảnh báo gian lận nào
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                elements.alertsTableBody.innerHTML = alerts.map(function (alert) {
+                    const isHighRisk = alert.is_high_risk || alert.risk_score > 80;
+                    const isNew = !state.knownAlertIds.has(alert.alert_id);
+                    if (isNew) {
+                        state.knownAlertIds.add(alert.alert_id);
+                    }
+
+                    const rowClass = isHighRisk
+                        ? 'animate-pulse-risk bg-red-50'
+                        : 'hover:bg-slate-50';
+
+                    const riskBadgeClass = {
+                        CRITICAL: 'bg-red-600 text-white',
+                        HIGH: 'bg-red-100 text-red-700',
+                        MEDIUM: 'bg-amber-100 text-amber-700',
+                        LOW: 'bg-slate-100 text-slate-600',
+                    }[alert.risk_level] || 'bg-slate-100 text-slate-600';
+
+                    const highRiskTag = isHighRisk
+                        ? '<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white uppercase">HIGH RISK</span>'
+                        : '';
+
+                    return `
+                        <tr class="${rowClass} transition-colors">
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">${alert.detected_at || '—'}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-slate-800">${alert.user_id}${highRiskTag}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="inline-flex px-2 py-0.5 rounded-lg text-xs font-semibold ${riskBadgeClass}">${alert.risk_level}</span>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-bold ${isHighRisk ? 'text-red-600' : 'text-orange-500'}">${alert.risk_score.toFixed(1)}</td>
+                            <td class="px-4 py-3 text-sm text-slate-500 max-w-[160px] truncate" title="${alert.rule_name}">${alert.rule_name}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            async function fetchAlerts() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/alerts?limit=20`);
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        renderAlertsTable(result.data);
+                        const now = new Date();
+                        elements.alertsLastSync.textContent = `Sync: ${now.toLocaleTimeString('vi-VN')}`;
+                    }
+                } catch (error) {
+                    console.error('Lỗi polling alerts:', error);
+                }
+            }
+
+            async function fetchDashboardStats() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/dashboard/stats`);
+                    const result = await response.json();
+
+                    if (result.data) {
+                        const stats = result.data;
+                        elements.statTotalAlerts.textContent = stats.total_alerts.toLocaleString('vi-VN');
+                        elements.statHighRisk.textContent = stats.high_risk_alerts.toLocaleString('vi-VN');
+                        elements.statFraudRate.textContent = `${stats.fraud_rate_percent}%`;
+
+                        const pipelineLabels = {
+                            live: { text: 'Live', className: 'text-emerald-600' },
+                            degraded: { text: 'Degraded', className: 'text-amber-500' },
+                            offline: { text: 'Offline', className: 'text-red-500' },
+                        };
+                        const pipeline = pipelineLabels[stats.pipeline_status] || pipelineLabels.offline;
+                        elements.statPipeline.textContent = pipeline.text;
+                        elements.statPipeline.className = `text-3xl font-bold mt-1 capitalize ${pipeline.className}`;
+
+                        if (stats.pipeline_status === 'live') {
+                            elements.adminLiveBadge.classList.remove('text-amber-400');
+                            elements.adminLiveBadge.classList.add('text-emerald-400');
+                        } else {
+                            elements.adminLiveBadge.classList.remove('text-emerald-400');
+                            elements.adminLiveBadge.classList.add('text-amber-400');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Lỗi polling stats:', error);
+                }
+            }
+
+            async function fetchMlopsMetrics() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/mlops/metrics`);
+                    const result = await response.json();
+
+                    if (result.data) {
+                        updateMlopsChart(result.data);
+                    }
+                } catch (error) {
+                    console.error('Lỗi polling MLOps:', error);
+                }
+            }
+
+            function updateMlopsChart(metrics) {
+                const canvas = document.getElementById('mlopsChart');
+                if (!canvas) {
+                    return;
+                }
+
+                const chartData = {
+                    labels: metrics.labels,
+                    datasets: [
+                        {
+                            label: 'Champion Accuracy (%)',
+                            data: metrics.champion_accuracy,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2.5,
+                            tension: 0.35,
+                            fill: true,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                        },
+                        {
+                            label: 'Challenger Accuracy (%)',
+                            data: metrics.challenger_accuracy,
+                            borderColor: '#a855f7',
+                            backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                            borderWidth: 2.5,
+                            borderDash: [6, 4],
+                            tension: 0.35,
+                            fill: false,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                        },
+                    ],
+                };
+
+                if (state.mlopsChart) {
+                    state.mlopsChart.data = chartData;
+                    state.mlopsChart.update('none');
+                    return;
+                }
+
+                state.mlopsChart = new Chart(canvas, {
+                    type: 'line',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                titleFont: { family: 'Inter', size: 13 },
+                                bodyFont: { family: 'Inter', size: 12 },
+                                padding: 12,
+                                cornerRadius: 8,
+                            },
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { family: 'Inter', size: 11 }, color: '#94a3b8' },
+                            },
+                            y: {
+                                min: 80,
+                                max: 100,
+                                grid: { color: '#f1f5f9' },
+                                ticks: {
+                                    font: { family: 'Inter', size: 11 },
+                                    color: '#94a3b8',
+                                    callback: function (value) { return value + '%'; },
+                                },
+                            },
+                        },
+                    },
+                });
+            }
+
+            function startAdminPolling() {
+                stopAdminPolling();
+                fetchAlerts();
+                fetchDashboardStats();
+                fetchMlopsMetrics();
+
+                state.alertsPollingTimer = setInterval(fetchAlerts, POLL_INTERVAL_MS);
+                state.statsPollingTimer = setInterval(function () {
+                    fetchDashboardStats();
+                    fetchMlopsMetrics();
+                }, POLL_INTERVAL_MS * 2);
+            }
+
+            function stopAdminPolling() {
+                if (state.alertsPollingTimer) {
+                    clearInterval(state.alertsPollingTimer);
+                    state.alertsPollingTimer = null;
+                }
+                if (state.statsPollingTimer) {
+                    clearInterval(state.statsPollingTimer);
+                    state.statsPollingTimer = null;
+                }
+            }
+
+            function bindEvents() {
+                elements.loginForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    login(elements.loginUsername.value.trim(), elements.loginPassword.value);
+                });
+
+                document.querySelectorAll('.demo-login-btn').forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        const username = button.getAttribute('data-demo-user');
+                        elements.loginUsername.value = username;
+                        elements.loginPassword.value = 'password';
+                        login(username, 'password');
+                    });
+                });
+
+                elements.userLogoutBtn.addEventListener('click', logout);
+                elements.adminLogoutBtn.addEventListener('click', logout);
+                elements.transferForm.addEventListener('submit', handleTransferSubmit);
+                elements.demoSpamBtn.addEventListener('click', runSpamDemo);
+                elements.demoHugeBtn.addEventListener('click', runHugeDemo);
+                elements.spoofVpnToggle.addEventListener('change', updateIpDisplay);
+            }
+
+            function init() {
+                bindEvents();
+                fetchPublicIp();
+
+                const savedSession = loadSession();
+                if (savedSession) {
+                    state.session = savedSession;
+                    navigateAfterLogin();
+                } else {
+                    setView('login');
+                }
+            }
+
+            init();
+        })();
     </script>
 </body>
 </html>
