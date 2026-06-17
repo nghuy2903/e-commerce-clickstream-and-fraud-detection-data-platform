@@ -16,7 +16,7 @@
 
 # 3. Kích hoạt Flink Real-time (Chạy ngầm với cờ -d)
 Write-Host "`n[3/5] Đang bắn Job Flink Real-time xuống JobManager..." -ForegroundColor Cyan
-docker exec -d jobmanager flink run -py /app/realtime_layer/jobs/fraud_detection_job.py
+docker exec -d -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -e POSTGRES_HOST=postgres flink-jobmanager ./bin/flink run -py /tmp/fraud_detector.py
 
 # 4. Kích hoạt Spark Streaming (Chạy ngầm với cờ -d)
 Write-Host "`n[4/5] Đang bắn Job Spark Streaming xuống Spark Master..." -ForegroundColor Cyan
