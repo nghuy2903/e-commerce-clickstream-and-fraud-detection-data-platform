@@ -20,10 +20,9 @@ def main():
         # 1. Truy vấn 100 giao dịch mới nhất từ bảng Raw
         print("📥 Đang hút dữ liệu từ bảng local.raw.raw_banking_events...")
         df_raw = spark.sql("""
-            SELECT event_timestamp, event_id, user_id, amount, event_type, is_simulated
+            SELECT  event_type, COUNT(*) AS total_category
             FROM local.raw.raw_banking_events 
-            ORDER BY event_timestamp DESC 
-            LIMIT 10
+            GROUP BY event_type
         """)
         
         # 2. Hiển thị dữ liệu trên Terminal bằng lệnh chuẩn của Spark
