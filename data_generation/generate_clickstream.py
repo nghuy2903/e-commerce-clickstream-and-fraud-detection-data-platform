@@ -133,6 +133,8 @@ class BankingSimulator:
                 break
             state = chain.next_state(state)
 
+            time.sleep(random.uniform(2.0, 7.0))
+
     def _delivery_callback(self, err, msg) -> None:
         if err is not None:
             print(f"Kafka delivery failed: {err}")
@@ -170,7 +172,7 @@ class BankingSimulator:
             while True:
                 is_fraud = self._pick_is_fraud()
                 self._run_session(is_fraud, self._send_event)
-                time.sleep(random.uniform(min_delay_sec, max_delay_sec))
+                # time.sleep(random.uniform(min_delay_sec, max_delay_sec))
         except KeyboardInterrupt:
             print("\nĐã nhận lệnh dừng simulator.")
         finally:
