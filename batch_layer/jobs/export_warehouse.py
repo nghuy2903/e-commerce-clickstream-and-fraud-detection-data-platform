@@ -20,9 +20,15 @@ def main():
         # 1. Truy vấn 100 giao dịch mới nhất từ bảng Raw
         print("📥 Đang hút dữ liệu từ bảng local.raw.raw_banking_events...")
         df_raw = spark.sql("""
-            SELECT  event_type, COUNT(*) AS total_category
-            FROM local.raw.raw_banking_events 
-            GROUP BY event_type
+            SELECT *
+            FROM local.raw.raw_banking_events
+            LIMIT 10
+        """)
+
+        df_dim = spark.sql("""
+            SELECT *
+            FROM local.dim.account_history
+            LIMIT 10
         """)
         
         # 2. Hiển thị dữ liệu trên Terminal bằng lệnh chuẩn của Spark
@@ -33,15 +39,15 @@ def main():
         print("\n=== 10 GIAO DỊCH MỚI NHẤT ===")
         # truncate=False giúp hiển thị full text không bị cắt xén (dấu ...)
         df_raw.show(10, truncate=False)
-
-        # 3. Xuất ra file CSV bằng bộ máy của Spark (Native)
-        export_dir = "/app/batch_layer/warehouse/latest_raw_events_export"
+        df_dim.show(10, truncate=False)
+        # # 3. Xuất ra file CSV bằng bộ máy của Spark (Native)
+        # export_dir = "/app/batch_layer/warehouse/latest_raw_events_export"
         
-        # coalesce(1) ép Spark gom toàn bộ dữ liệu phân tán vào đúng 1 file CSV duy nhất
-        df_raw.coalesce(1).write.mode("overwrite").option("header", "true").csv(export_dir)
+        # # coalesce(1) ép Spark gom toàn bộ dữ liệu phân tán vào đúng 1 file CSV duy nhất
+        # df_raw.coalesce(1).write.mode("overwrite").option("header", "true").csv(export_dir)
         
-        print(f"\n✅ Đã xuất dữ liệu thành công ra thư mục vật lý tại:")
-        print(f"👉 batch_layer/warehouse/latest_raw_events_export/")
+        # print(f"\n✅ Đã xuất dữ liệu thành công ra thư mục vật lý tại:")
+        # print(f"👉 batch_layer/warehouse/latest_raw_events_export/")
 
     finally:
         spark.stop()

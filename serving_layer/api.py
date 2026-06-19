@@ -51,7 +51,7 @@ DEMO_USERS: dict[str, dict[str, str]] = {
     "customer1": {
         "password": "password",
         "role": "user",
-        "user_id": "user_999",
+        "user_id": "user_002",
         "display_name": "Nguyễn Văn Khách",
     },
     "admin1": {
