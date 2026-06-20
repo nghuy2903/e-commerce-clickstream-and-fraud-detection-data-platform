@@ -20,7 +20,7 @@ if str(_ROOT) not in sys.path:
 from batch_layer.config.iceberg_spark import build_iceberg_spark
 
 KAFKA_BOOTSTRAP_SERVERS = "kafka:29092"
-KAFKA_TOPIC = "banking_events"
+KAFKA_TOPIC = "banking_events_v2"
 RAW_TABLE = "local.raw.raw_banking_events"
 CHECKPOINT_LOCATION = "/tmp/checkpoints/raw_events"
 
@@ -82,7 +82,7 @@ def main():
         .outputMode("append") \
         .option("checkpointLocation", CHECKPOINT_LOCATION) \
         .option("fanout-enabled", "true") \
-        .trigger(processingTime="30 seconds") \
+        .trigger(availableNow=True) \
         .option("path", RAW_TABLE) \
         .start()
 

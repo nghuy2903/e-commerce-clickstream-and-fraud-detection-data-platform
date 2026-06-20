@@ -1,17 +1,18 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import random
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Callable
 
 from confluent_kafka import Producer
 
 KAFKA_BROKER = "localhost:9092"
-TOPIC_NAME = "banking_events"
+TOPIC_NAME = "banking_events_v2"
 
 NORMAL_USER_RATIO = 0.80
 FRAUD_BOT_RATIO = 0.20
@@ -58,19 +59,34 @@ class BankingSimulator:
         broker: str = KAFKA_BROKER,
         topic: str = TOPIC_NAME,
         fraud_ratio: float = FRAUD_BOT_RATIO,
+        fast_forward: bool = False
     ) -> None:
         self._broker = broker
         self._topic = topic
         self._fraud_ratio = fraud_ratio
+
+        self._fast_forward = fast_forward
+        self._simulated_time = datetime.now(timezone.utc) - timedelta(days=30)
+
         self._normal_chain = MarkovChain(NORMAL_TRANSITIONS, "LOGIN")
         self._fraud_chain = MarkovChain(FRAUD_TRANSITIONS, "LOGIN_FAILED")
         self._producer: Producer | None = None
+        self._fraud_user_ids = [str(uuid.uuid4()) for _ in range(50)]
+        self._normal_user_ids = [str(uuid.uuid4()) for _ in range(1000)]
+        with open("ground_truth_bots.csv", mode="w", newline="") as ground_truth_file:
+            writer = csv.writer(ground_truth_file)
+            writer.writerow(["user_id"])
+            for user_id in self._fraud_user_ids:
+                writer.writerow([user_id])
 
     def _create_producer(self) -> Producer:
         return Producer({"bootstrap.servers": self._broker})
 
-    @staticmethod
-    def _utc_timestamp() -> str:
+    def _get_and_advance_timestamp(self) -> str:
+        if self._fast_forward:
+            # Tua nhanh 3-7s cho mỗi sự kiện
+            self._simulated_time += timedelta(seconds=random.uniform(3.0, 7.0))
+            return self._simulated_time.isoformat()
         return datetime.now(timezone.utc).isoformat()
 
     @staticmethod
@@ -79,8 +95,10 @@ class BankingSimulator:
 
     def _new_user_id(self, is_fraud: bool) -> str:
         if is_fraud:
-            return f"fraud_bot_{random.randint(1, 50)}"
-        return f"normal_user_{random.randint(100, 9999)}"
+            if random.random() < 0.5:
+                return random.choice(self._fraud_user_ids)
+            return random.choice(self._normal_user_ids)
+        return random.choice(self._normal_user_ids)
 
     def _new_ip(self, is_fraud: bool) -> str:
         if is_fraud:
@@ -94,11 +112,11 @@ class BankingSimulator:
         if is_fraud:
             # Số tiền bất thường: rất lớn hoặc lặp mẫu đáng ngờ
             if random.random() < 0.5:
-                return round(random.uniform(50_000, 500_000), 2)
-            return float(random.choice([9_999.99, 49_999.99, 99_999.99, 999_999.0]))
+                return round(random.uniform(100_000_000, 500_000_000), 2)
+            return float(random.choice([499_999.0, 99_000.0, 50_000.0]))
         if event_type == "WITHDRAW":
-            return round(random.uniform(20, 2_000), 2)
-        return round(random.uniform(50, 5_000), 2)
+            return round(random.uniform(50_000, 5_000_000), 2)
+        return round(random.uniform(50_000, 20_000_000), 2)
 
     def _build_event(
         self,
@@ -109,7 +127,7 @@ class BankingSimulator:
     ) -> dict:
         return {
             "event_id": str(uuid.uuid4()),
-            "timestamp": self._utc_timestamp(),
+            "timestamp": self._get_and_advance_timestamp(),
             "user_id": user_id,
             "event_type": event_type,
             "amount": self._amount_for_event(event_type, is_fraud),
@@ -133,7 +151,8 @@ class BankingSimulator:
                 break
             state = chain.next_state(state)
 
-            time.sleep(random.uniform(2.0, 7.0))
+            if not self._fast_forward:
+                time.sleep(random.uniform(2.0, 7.0))
 
     def _delivery_callback(self, err, msg) -> None:
         if err is not None:
@@ -149,12 +168,13 @@ class BankingSimulator:
             callback=self._delivery_callback,
         )
         self._producer.poll(0)
-        print(f"Sent event: {json.dumps(event, ensure_ascii=False)}")
+        # print(f"Sent event: {json.dumps(event, ensure_ascii=False)}")
 
     def run(
         self,
         min_delay_sec: float = 0.05,
         max_delay_sec: float = 0.35,
+        target_sessions: int = 10000,
     ) -> None:
         """Chạy vòng lặp sinh session và đẩy sự kiện lên Kafka."""
         try:
@@ -168,11 +188,28 @@ class BankingSimulator:
             print(f"Không thể khởi tạo Kafka Producer: {exc}")
             return
 
+        # try:
+        #     while True:
+        #         is_fraud = self._pick_is_fraud()
+        #         self._run_session(is_fraud, self._send_event)
+        #         # time.sleep(random.uniform(min_delay_sec, max_delay_sec))
+        session_count = 0
         try:
             while True:
                 is_fraud = self._pick_is_fraud()
                 self._run_session(is_fraud, self._send_event)
-                # time.sleep(random.uniform(min_delay_sec, max_delay_sec))
+                session_count += 1
+                
+                if self._fast_forward and session_count % 1000 == 0:
+                    print(f"⚡ Đang chạy siêu tốc... Đã hoàn thành {session_count}/{target_sessions} phiên.")
+                # Dừng lại nếu đang chạy siêu tốc và đã đạt mục tiêu
+                if self._fast_forward and session_count >= target_sessions:
+                    print(f"\n✅ Đã sinh xong {target_sessions} phiên giao dịch siêu tốc.")
+                    break
+                    
+                # Chỉ sleep chờ ở giữa các session nếu chạy chế độ Demo
+                if not self._fast_forward:
+                    time.sleep(random.uniform(min_delay_sec, max_delay_sec))
         except KeyboardInterrupt:
             print("\nĐã nhận lệnh dừng simulator.")
         finally:
@@ -182,5 +219,7 @@ class BankingSimulator:
 
 
 if __name__ == "__main__":
-    simulator = BankingSimulator()
-    simulator.run()
+    # simulator = BankingSimulator()
+    # simulator.run()
+    simulator = BankingSimulator(fast_forward=True) 
+    simulator.run(target_sessions=10000)

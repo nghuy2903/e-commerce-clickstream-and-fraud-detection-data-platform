@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 KAFKA_BROKER = "localhost:9092"
-KAFKA_TOPIC = "banking_events"
+KAFKA_TOPIC = "banking_events_v2"
 
 producer: KafkaProducer | None = None
 try:

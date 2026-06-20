@@ -41,7 +41,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fraud_detector")
 
-KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "banking_events")
+KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "banking_events_v2")
 KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_GROUP_ID = os.environ.get("KAFKA_GROUP_ID", "flink-fraud-detector")
 
