@@ -1,15 +1,6 @@
 """
-Tầng 3 — Luồng Real-time (PyFlink): phát hiện gian lận từ Kafka → PostgreSQL.
-
-Pipeline:
-  Kafka (banking_events) → JSON parse → ChampionModelScorer → JDBC INSERT fraud_alerts
-
-Chạy trong Docker Flink (khuyến nghị):
-  docker cp streaming_layer/fraud_detector.py flink-jobmanager:/tmp/fraud_detector.py
-  docker exec flink-jobmanager ./bin/flink run -py /tmp/fraud_detector.py
-
-Chạy local (cần pyflink + connector JARs):
-  python streaming_layer/fraud_detector.py
+Tầng 3 — Luồng Real-time (PyFlink): Stateful Fraud Detection
+Sử dụng KeyedProcessFunction để đếm Spam và nhận diện IP lạ động.
 """
 
 from __future__ import annotations
@@ -17,48 +8,40 @@ from __future__ import annotations
 import json
 import logging
 import os
-import random
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable
 
-from pyflink.common import Configuration, Duration, Types, WatermarkStrategy
+from pyflink.common import Configuration, Duration, Types, WatermarkStrategy, Row
+from pyflink.common.time import Time
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import KafkaOffsetsInitializer, KafkaSource
-from pyflink.datastream.connectors.jdbc import (
-    JdbcConnectionOptions,
-    JdbcExecutionOptions,
-    JdbcSink,
-)
-from pyflink.datastream.functions import FilterFunction, MapFunction
-from pyflink.common import Row
+from pyflink.datastream.connectors.jdbc import JdbcConnectionOptions, JdbcExecutionOptions, JdbcSink
+from pyflink.datastream.functions import MapFunction, FilterFunction, KeyedProcessFunction, RuntimeContext
+from pyflink.datastream.state import ValueStateDescriptor, StateTtlConfig
 
 import xgboost as xgb
 import pandas as pd
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s — %(message)s")
 logger = logging.getLogger("fraud_detector")
 
+# --- CẤU HÌNH MÔI TRƯỜNG ---
 KAFKA_TOPIC = os.environ.get("KAFKA_TOPIC", "banking_events_v2")
-KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
 KAFKA_GROUP_ID = os.environ.get("KAFKA_GROUP_ID", "flink-fraud-detector")
 
-POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.environ.get("POSTGRES_DB", "banking_mlops")
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "admin")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "admin123")
 
-FRAUD_THRESHOLD = int(os.environ.get("FRAUD_RISK_THRESHOLD", "80"))
 CHECKPOINT_INTERVAL_MS = int(os.environ.get("FLINK_CHECKPOINT_INTERVAL_MS", "60000"))
 WATERMARK_MAX_OUT_OF_ORDER_SEC = int(os.environ.get("FLINK_WATERMARK_MAX_OUT_OF_ORDER_SEC", "30"))
-
 
 @dataclass(frozen=True)
 class BankingEvent:
@@ -70,7 +53,6 @@ class BankingEvent:
     ip_address: str
     is_simulated: bool
 
-
 @dataclass(frozen=True)
 class FraudAlertRecord:
     source_event_id: str
@@ -81,80 +63,9 @@ class FraudAlertRecord:
     alert_message: str
     detected_at: str
 
-
-class ChampionModelScorer:
-    """
-    Thực hiện Inference bằng mô hình XGBoost.
-    Yêu cầu: xgboost_fraud_model.json và preprocessor_artifact.json nằm trong thư mục models/.
-    """
-    def __init__(self, fraud_threshold: float = 0.02) -> None:
-        self._fraud_threshold = fraud_threshold
-        
-        # Đường dẫn tới thư mục models
-        model_dir = Path("/tmp/models")
-        model_path = model_dir / "xgboost_fraud_model.json"
-        prep_path = model_dir / "preprocessor_artifact.json"
-        
-        # 1. Load XGBoost Model
-        self.model = xgb.Booster()
-        self.model.load_model(str(model_path))
-        
-        # 2. Load cấu hình Preprocessor (dùng để mã hóa IP và Event Type)
-        with open(prep_path, "r", encoding="utf-8") as f:
-            self.preprocessor = json.load(f)
-
-    def _encode_ip(self, ip_address: str) -> float:
-        """Frequency Encoding cho IP giống hệt luồng Train."""
-        ip_map = self.preprocessor.get("ip_freq_map", {})
-        return float(ip_map.get(ip_address, 1))  # Mặc định là 1 nếu IP lạ xuất hiện
-
-    def _encode_event_type(self, event_type: str) -> list[float]:
-        """One-Hot Encoding cho Event Type."""
-        categories = self.preprocessor.get("event_categories", [])
-        return [1.0 if event_type == cat else 0.0 for cat in categories]
-
-    def score(self, event: BankingEvent) -> tuple[float, bool]:
-
-        logger.warning(f"[INSPECT DATA] IP nhận được là: '{event.ip_address}'")
-
-        # Cải tiến lệnh IF: Dùng chữ 'in' thay vì '==' để chống lỗi khoảng trắng
-        if "10.0.0.88" in str(event.ip_address):
-            logger.warning(f"[GOD MODE] Bắt quả tang IP giả lập VPN: {event.ip_address} -> Ép điểm 99%")
-            return 99.0, True
-            
-        amount = float(event.amount)
-        
-        # BƠM THÔNG SỐ CỰC ĐOAN
-        tx_count_1h = 45.0         
-        amount_avg_1h = amount
-        amount_vs_avg = 50.0       
-        hour_of_day = float(datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")).hour)
-        ip_address_freq = float(self.preprocessor.get("ip_freq_map", {}).get(event.ip_address, 1.0))
-        
-        # SỬ DỤNG LOGGER.WARNING THAY VÌ PRINT ĐỂ ÉP FLINK IN RA LOG
-        logger.warning(f"[DEBUG MODEL] Kích hoạt Spam! IP: {event.ip_address} | Số giao dịch: {tx_count_1h}")
-
-        # One-hot
-        categories = self.preprocessor.get("event_categories", [])
-        one_hot = [1.0 if event.event_type == cat else 0.0 for cat in categories]
-        
-        # Ráp 13 cột
-        features = [amount, tx_count_1h, amount_avg_1h, amount_vs_avg, hour_of_day, ip_address_freq] + one_hot
-        feature_names = ["amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day", "ip_address_freq", "event_type_LOGIN", "event_type_LOGIN_FAILED", "event_type_LOGIN_SUCCESS", "event_type_LOGOUT", "event_type_TRANSFER", "event_type_VIEW_BALANCE", "event_type_WITHDRAW"]
-        
-        # Inference
-        dmatrix = xgb.DMatrix(pd.DataFrame([features], columns=feature_names))
-        risk_score = float(self.model.predict(dmatrix)[0])
-        
-        # Ngưỡng 2% (0.02)
-        is_fraud = risk_score > 0.02 
-        
-        return risk_score * 100, is_fraud
-
 def parse_banking_event(raw_json: str) -> BankingEvent | None:
-    """Deserialize JSON từ Kafka; trả None nếu payload lỗi."""
     try:
-        payload: dict[str, Any] = json.loads(raw_json)
+        payload = json.loads(raw_json)
         return BankingEvent(
             event_id=str(payload["event_id"]),
             timestamp=str(payload["timestamp"]),
@@ -164,219 +75,166 @@ def parse_banking_event(raw_json: str) -> BankingEvent | None:
             ip_address=str(payload.get("ip_address", "0.0.0.0")),
             is_simulated=bool(payload.get("is_simulated", False)),
         )
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        logger.warning("Bỏ qua message JSON lỗi: %s | raw=%s", exc, raw_json[:200])
-        print(f"[PARSE ERROR] Không parse được JSON: {exc}")
+    except Exception as exc:
+        logger.warning(f"Parse lỗi: {exc}")
         return None
 
-
 def _risk_level_from_score(score_0_100: float) -> str:
-    if score_0_100 > 90:
-        return "CRITICAL"
-    if score_0_100 > 80:
-        return "HIGH"
-    if score_0_100 > 50:
-        return "MEDIUM"
+    if score_0_100 > 90: return "CRITICAL"
+    if score_0_100 > 80: return "HIGH"
+    if score_0_100 > 50: return "MEDIUM"
     return "LOW"
 
+# --- BƯỚC 1: MAPPER GIẢI MÃ JSON ---
+class ParseEventMapper(MapFunction):
+    def map(self, value: str) -> BankingEvent | None:
+        return parse_banking_event(value)
 
-class FraudScoringMapper(MapFunction):
-    """MapFunction: nhận JSON string → FraudAlertRecord hoặc None (không phải fraud)."""
+# --- BƯỚC 2: STATEFUL PROCESS FUNCTION (CÓ BỘ NHỚ) ---
+class FraudScoringProcessFunction(KeyedProcessFunction):
+    def open(self, runtime_context: RuntimeContext) -> None:
+        # 1. Khởi tạo XGBoost & Preprocessor
+        self._fraud_threshold = 0.2
+        model_dir = Path("/tmp/models")
+        self.model = xgb.Booster()
+        self.model.load_model(str(model_dir / "xgboost_fraud_model.json"))
+        
+        with open(model_dir / "preprocessor_artifact.json", "r", encoding="utf-8") as f:
+            self.preprocessor = json.load(f)
+            
+        # 2. Khởi tạo StateBackend (Bộ nhớ đệm lưu lịch sử giao dịch)
+        # Thiết lập TTL: Dữ liệu tự động bốc hơi sau 1 giờ để giải phóng RAM
+        ttl_config = StateTtlConfig.new_builder(Time.hours(1)) \
+            .set_update_type(StateTtlConfig.UpdateType.OnCreateAndWrite) \
+            .build()
+            
+        state_desc = ValueStateDescriptor("tx_history", Types.STRING())
+        state_desc.enable_time_to_live(ttl_config)
+        self.history_state = runtime_context.get_state(state_desc)
 
-    def open(self, runtime_context) -> None:
-        self._scorer = ChampionModelScorer(fraud_threshold = 0.5)
+    def process_element(self, event: BankingEvent, ctx: KeyedProcessFunction.Context) -> Iterable[FraudAlertRecord]:
+        logger.info(f"[RECEIVED] Xử lý event {event.event_id} từ {event.user_id}")
+        
+        # --- LOGIC 1: ĐẾM GIAO DỊCH (STATEFUL SPAM DETECTION) ---
+        now_ts = datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")).timestamp()
+        
+        # Lấy lịch sử từ bộ nhớ (List các dict chứa timestamp và amount)
+        history_str = self.history_state.value()
+        history = json.loads(history_str) if history_str else []
+        
+        # Lọc bỏ các giao dịch cũ hơn 1 giờ (3600 giây)
+        history = [tx for tx in history if (now_ts - tx["ts"]) <= 300]
+        
+        # Thêm giao dịch hiện tại vào bộ nhớ
+        history.append({"ts": now_ts, "amt": float(event.amount)})
+        self.history_state.update(json.dumps(history))
+        
+        # Tính toán thông số thực tế từ bộ nhớ
+        tx_count_1h = float(len(history))
+        total_amount_1h = sum(tx["amt"] for tx in history)
+        amount_avg_1h = total_amount_1h / tx_count_1h
+        amount_vs_avg = float(event.amount) / amount_avg_1h if amount_avg_1h > 0 else 1.0
 
-    def map(self, value: str) -> FraudAlertRecord | None:
-        event = parse_banking_event(value)
-        if event is None:
-            return None
+        # --- LOGIC 2: NHẬN DIỆN MỌI IP LẠ (DYNAMIC RULE) ---
+        known_ips = self.preprocessor.get("ip_freq_map", {})
+        is_strange_ip = event.ip_address not in known_ips
+        ip_address_freq = float(known_ips.get(event.ip_address, 1.0))
+        
+        if is_strange_ip:
+            logger.warning(f"[RULE-BASED] IP hoàn toàn mới: '{event.ip_address}'")
+            # Ép điểm 99% nếu IP lạ VÀ đang có dấu hiệu spam (>= 3 giao dịch/giờ)
+            if tx_count_1h >= 3:
+                yield self._create_alert(event, 99.0, "Spam từ IP lạ")
+                return
 
-        print(f"[RECEIVED] Đã nhận event {event.event_id} | user={event.user_id} | type={event.event_type}")
-        logger.info("Đã nhận event %s (user=%s)", event.event_id, event.user_id)
+        # --- LOGIC 3: XGBoost SCORING ---
+        hour_of_day = float(datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")).hour)
+        expected_categories = [
+            "LOGIN", "LOGIN_FAILED", "LOGIN_SUCCESS", 
+            "LOGOUT", "TRANSFER", "VIEW_BALANCE", "WITHDRAW"
+        ]
+        
+        # Tạo One-Hot vector có độ dài cố định là 7
+        one_hot = [1.0 if event.event_type == cat else 0.0 for cat in expected_categories]
+        
+        # Ráp chuẩn xác 13 cột (6 cột số + 7 cột sự kiện)
+        features = [
+            float(event.amount), tx_count_1h, amount_avg_1h, 
+            amount_vs_avg, hour_of_day, ip_address_freq
+        ] + one_hot
+        
+        feature_names = [
+            "amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day", "ip_address_freq",
+            "event_type_LOGIN", "event_type_LOGIN_FAILED", "event_type_LOGIN_SUCCESS", 
+            "event_type_LOGOUT", "event_type_TRANSFER", "event_type_VIEW_BALANCE", "event_type_WITHDRAW"
+        ]
+        
+        # Inference an toàn
+        dmatrix = xgb.DMatrix(pd.DataFrame([features], columns=feature_names))
+        risk_score = float(self.model.predict(dmatrix)[0])
+        
+        logger.warning(f"[INFERENCE] User: {event.user_id} | TX_1h: {tx_count_1h} | Lạ IP: {is_strange_ip} | Score: {risk_score:.4f}")
+        
+        if risk_score > self._fraud_threshold:
+            yield self._create_alert(event, risk_score * 100, "XGBoost Champion Model")
 
-        risk_score_0_100, is_fraud = self._scorer.score(event)
-        if not is_fraud:
-            print(f"[SCORE] event {event.event_id} → risk={risk_score_0_100:.2f} (OK)")
-            return None
-
-        risk_score_db = round(risk_score_0_100 / 100.0, 4)
-        risk_level = _risk_level_from_score(risk_score_0_100)
-        detected_at = datetime.now(timezone.utc).isoformat()
-
-        print(
-            f"[FRAUD] Đã phát hiện gian lận! event={event.event_id} | "
-            f"user={event.user_id} | risk={risk_score_0_100:.2f} | level={risk_level}"
-        )
-        logger.warning(
-            "Fraud detected: event=%s user=%s score=%.2f",
-            event.event_id,
-            event.user_id,
-            risk_score_0_100,
-        )
-
+    def _create_alert(self, event: BankingEvent, score_0_100: float, rule: str) -> FraudAlertRecord:
+        risk_level = _risk_level_from_score(score_0_100)
+        logger.warning(f"[FRAUD] Báo động! event={event.event_id} | score={score_0_100:.2f} | rule={rule}")
         return FraudAlertRecord(
             source_event_id=event.event_id,
             user_id=event.user_id,
-            risk_score=risk_score_db,
+            risk_score=round(score_0_100 / 100.0, 4),
             risk_level=risk_level,
-            rule_name="champion_model_v1",
-            alert_message=(
-                f"Champion model flagged {event.event_type} "
-                f"amount={event.amount} ip={event.ip_address}"
-            ),
-            detected_at=detected_at,
+            rule_name=rule,
+            alert_message=f"{rule} flagged {event.event_type} amount={event.amount} ip={event.ip_address}",
+            detected_at=datetime.now(timezone.utc).isoformat(),
         )
 
-
+# --- CÁC COMPONENT GHI DATABASE ---
 class FraudAlertToJdbcRowMapper(MapFunction):
-    """Chuyển FraudAlertRecord → tuple 8 cột cho JDBC sink."""
-
     def map(self, alert: FraudAlertRecord) -> Row:
-        return Row(
-            str(uuid.uuid4()),
-            alert.user_id,
-            alert.source_event_id,
-            alert.risk_score,
-            alert.risk_level,
-            alert.rule_name,    
-            alert.alert_message,
-            alert.detected_at,
-        )
-
-
-class IsFraudFilter(FilterFunction):
-    """Giữ lại chỉ các bản ghi fraud (khác None)."""
-
-    def filter(self, value: FraudAlertRecord | None) -> bool:
-        return value is not None
-
-
-def _jdbc_insert_sql() -> str:
-    return """
-        INSERT INTO fraud_alerts (
-            alert_id,
-            user_id,
-            source_event_id,
-            risk_score,
-            risk_level,
-            rule_name,
-            alert_message,
-            detected_at
-        ) VALUES (?::uuid, ?, ?::uuid, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)
-    """
-
+        return Row(str(uuid.uuid4()), alert.user_id, alert.source_event_id, alert.risk_score, alert.risk_level, alert.rule_name, alert.alert_message, alert.detected_at)
 
 def _build_jdbc_sink() -> JdbcSink:
-    jdbc_url = (
-        f"jdbc:postgresql://{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    )
-    return (
-        JdbcSink.sink(
-            sql=_jdbc_insert_sql(),
-            type_info=Types.TUPLE(
-                [
-                    Types.STRING(),
-                    Types.STRING(),
-                    Types.STRING(),
-                    Types.DOUBLE(),
-                    Types.STRING(),
-                    Types.STRING(),
-                    Types.STRING(),
-                    Types.STRING(),
-                ]
-            ),
-            jdbc_connection_options=JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
-            .with_url(jdbc_url)
-            .with_driver_name("org.postgresql.Driver")
-            .with_user_name(POSTGRES_USER)
-            .with_password(POSTGRES_PASSWORD)
-            .build(),
-            jdbc_execution_options=JdbcExecutionOptions.builder()
-            .with_batch_interval_ms(2000)
-            .with_batch_size(50)
-            .with_max_retries(3)
-            .build(),
-        )
+    sql = """INSERT INTO fraud_alerts (alert_id, user_id, source_event_id, risk_score, risk_level, rule_name, alert_message, detected_at) VALUES (?::uuid, ?, ?::uuid, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)"""
+    return JdbcSink.sink(
+        sql=sql,
+        type_info=Types.TUPLE([Types.STRING(), Types.STRING(), Types.STRING(), Types.DOUBLE(), Types.STRING(), Types.STRING(), Types.STRING(), Types.STRING()]),
+        jdbc_connection_options=JdbcConnectionOptions.JdbcConnectionOptionsBuilder().with_url(f"jdbc:postgresql://{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}").with_driver_name("org.postgresql.Driver").with_user_name(POSTGRES_USER).with_password(POSTGRES_PASSWORD).build(),
+        jdbc_execution_options=JdbcExecutionOptions.builder().with_batch_interval_ms(2000).with_batch_size(50).with_max_retries(3).build(),
     )
 
-
-def configure_environment(env: StreamExecutionEnvironment) -> None:
-    """Checkpoint + watermark cho xử lý event trễ."""
+def build_pipeline(env: StreamExecutionEnvironment | None = None) -> StreamExecutionEnvironment:
+    if env is None: env = StreamExecutionEnvironment.get_execution_environment()
     env.enable_checkpointing(CHECKPOINT_INTERVAL_MS)
     env.get_checkpoint_config().set_min_pause_between_checkpoints(30_000)
-    env.get_checkpoint_config().set_tolerable_checkpoint_failure_number(3)
-
     config = Configuration()
     config.set_string("execution.checkpointing.mode", "EXACTLY_ONCE")
     env.configure(config)
-
-
-def build_pipeline(env: StreamExecutionEnvironment | None = None) -> StreamExecutionEnvironment:
-    """
-    Xây dựng DataStream pipeline: Kafka → scoring → PostgreSQL.
-
-    Watermark: dùng event-time từ timestamp JSON khi mở rộng (hiện processing-time).
-    Để xử lý late events, tăng WATERMARK_MAX_OUT_OF_ORDER_SEC hoặc bật allowed lateness
-    trên window operator (xem processing_layer/README.md).
-    """
-    if env is None:
-        env = StreamExecutionEnvironment.get_execution_environment()
-
-    configure_environment(env)
     env.set_parallelism(1)
 
-    kafka_source = (
-        KafkaSource.builder()
-        .set_bootstrap_servers(KAFKA_BOOTSTRAP)
-        .set_topics(KAFKA_TOPIC)
-        .set_group_id(KAFKA_GROUP_ID)
-        .set_starting_offsets(KafkaOffsetsInitializer.latest())
-        .set_value_only_deserializer(SimpleStringSchema())
-        .build()
-    )
+    kafka_source = KafkaSource.builder().set_bootstrap_servers(KAFKA_BOOTSTRAP).set_topics(KAFKA_TOPIC).set_group_id(KAFKA_GROUP_ID).set_starting_offsets(KafkaOffsetsInitializer.latest()).set_value_only_deserializer(SimpleStringSchema()).build()
 
-    watermark_strategy = WatermarkStrategy.for_bounded_out_of_orderness(
-        Duration.of_seconds(WATERMARK_MAX_OUT_OF_ORDER_SEC)
-    )
-
-    raw_stream = env.from_source(
-        source=kafka_source,
-        watermark_strategy=watermark_strategy,
-        source_name="kafka-banking-events",
-    )
-
-    jdbc_row_type = Types.ROW(
-        [
-            Types.STRING(),
-            Types.STRING(),
-            Types.STRING(),
-            Types.DOUBLE(),
-            Types.STRING(),
-            Types.STRING(),
-            Types.STRING(),
-            Types.STRING(),
-        ]
-    )
-
+    # KIẾN TRÚC PIPELINE MỚI
+    raw_stream = env.from_source(kafka_source, WatermarkStrategy.for_bounded_out_of_orderness(Duration.of_seconds(WATERMARK_MAX_OUT_OF_ORDER_SEC)), "kafka-source")
+    
     alert_stream = (
-        raw_stream.map(FraudScoringMapper(), output_type=Types.PICKLED_BYTE_ARRAY())
-        .filter(IsFraudFilter())
-        .map(FraudAlertToJdbcRowMapper(), output_type=jdbc_row_type)
+        raw_stream
+        .map(ParseEventMapper(), output_type=Types.PICKLED_BYTE_ARRAY())
+        .filter(lambda e: e is not None)
+        .key_by(lambda e: e.user_id, key_type=Types.STRING()) # Phân luồng theo User để tạo State
+        .process(FraudScoringProcessFunction(), output_type=Types.PICKLED_BYTE_ARRAY())
+        .map(FraudAlertToJdbcRowMapper(), output_type=Types.ROW([Types.STRING(), Types.STRING(), Types.STRING(), Types.DOUBLE(), Types.STRING(), Types.STRING(), Types.STRING(), Types.STRING()]))
     )
 
     alert_stream.add_sink(_build_jdbc_sink()).name("postgres-fraud-alerts")
-
     return env
 
-
 def main() -> None:
-    print(
-        f"[STARTUP] Flink Fraud Detector | kafka={KAFKA_BOOTSTRAP} topic={KAFKA_TOPIC} "
-        f"| postgres={POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    )
+    print(f"[STARTUP] Flink Fraud Detector Stateful | kafka={KAFKA_BOOTSTRAP} topic={KAFKA_TOPIC}")
     env = build_pipeline()
-    env.execute("banking-fraud-detector")
-
+    env.execute("banking-fraud-detector-stateful")
 
 if __name__ == "__main__":
     main()
