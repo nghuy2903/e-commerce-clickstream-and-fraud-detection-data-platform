@@ -5,11 +5,12 @@ Khởi chạy: uvicorn serving_layer.api:app --host 0.0.0.0 --port 8000 --reload
 import json
 import uuid
 import random
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -109,6 +110,74 @@ def serialize_alert_row(alert: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, user_id: str):
+        if user_id in self.active_connections:
+            self.active_connections[user_id].remove(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+
+    async def send_personal_message(self, message: str, user_id: str):
+        if user_id in self.active_connections:
+            for connection in self.active_connections[user_id]:
+                try:
+                    await connection.send_text(message)
+                except Exception:
+                    pass
+
+manager = ConnectionManager()
+processed_alerts = set()
+
+async def poll_fraud_alerts():
+    while True:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            query = "SELECT alert_id, user_id, risk_score, alert_message FROM fraud_alerts WHERE detected_at > NOW() - INTERVAL '10 seconds'"
+            cursor.execute(query)
+            recent_alerts = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            for alert in recent_alerts:
+                aid = str(alert["alert_id"])
+                if aid not in processed_alerts:
+                    processed_alerts.add(aid)
+                    if len(processed_alerts) > 1000:
+                        processed_alerts.clear()
+                    
+                    if float(alert["risk_score"]) > 0.8:
+                        await manager.send_personal_message(
+                            json.dumps({"type": "LOCK", "message": alert.get("alert_message", "Tài khoản của bạn đã bị khóa do phát hiện gian lận!")}), 
+                            alert["user_id"]
+                        )
+        except Exception as e:
+            print(f"Error polling DB alerts for WS: {e}")
+        
+        await asyncio.sleep(2)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(poll_fraud_alerts())
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, user_id)
+
 @app.get("/")
 async def serve_index():
     """Phục vụ SPA tại root URL."""
@@ -127,6 +196,21 @@ async def login(credentials: LoginRequest):
     user_record = DEMO_USERS.get(username)
     if user_record is None or user_record["password"] != password:
         raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
+
+    if user_record["role"] == "user":
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT 1 FROM fraud_alerts WHERE user_id = %s AND risk_score > 0.8 LIMIT 1", (user_record["user_id"],))
+            is_blocked = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            if is_blocked:
+                raise HTTPException(status_code=403, detail="ACCOUNT_LOCKED")
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            print(f"Login DB Check Error: {e}")
 
     token = str(uuid.uuid4())
     session_payload = {

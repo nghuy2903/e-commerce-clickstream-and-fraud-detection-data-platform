@@ -61,6 +61,23 @@
     <!-- Toast Container -->
     <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-3 w-full max-w-sm pointer-events-none"></div>
 
+    <!-- ==================== CUSTOM LOCK MODAL ==================== -->
+    <div id="lockModal" class="fixed inset-0 z-50 flex items-center justify-center view-hidden">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center border-t-4 border-red-500 animate-[slideIn_0.3s_ease-out]">
+            <div class="w-16 h-16 rounded-full bg-red-100 text-red-500 mx-auto flex items-center justify-center mb-4">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">Tài Khoản Bị Khóa</h3>
+            <p class="text-sm text-slate-600 mb-6">Tài khoản của bạn đã bị khóa do phát hiện hành vi gian lận!</p>
+            <button id="lockModalOkBtn" class="w-full rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold py-3 shadow-md transition active:scale-[0.98]">
+                OK
+            </button>
+        </div>
+    </div>
+
     <!-- ==================== LOGIN VIEW ==================== -->
     <section id="loginView" class="gradient-bg min-h-screen flex items-center justify-center p-6">
         <div class="w-full max-w-md">
@@ -97,22 +114,6 @@
                         Đăng nhập
                     </button>
                 </form>
-
-                <div class="mt-6 pt-6 border-t border-slate-100">
-                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Tài khoản Demo</p>
-                    <div class="grid grid-cols-2 gap-3">
-                        <button type="button" data-demo-user="customer1"
-                                class="demo-login-btn rounded-xl border border-slate-200 p-3 text-left hover:border-brand-500 hover:bg-brand-50 transition">
-                            <span class="block text-xs text-slate-400">Khách hàng</span>
-                            <span class="block text-sm font-semibold text-slate-700">customer1</span>
-                        </button>
-                        <button type="button" data-demo-user="admin1"
-                                class="demo-login-btn rounded-xl border border-slate-200 p-3 text-left hover:border-brand-500 hover:bg-brand-50 transition">
-                            <span class="block text-xs text-slate-400">Quản trị viên</span>
-                            <span class="block text-sm font-semibold text-slate-700">admin1</span>
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
     </section>
@@ -150,7 +151,7 @@
             <!-- Balance Card -->
             <div class="rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 text-white p-6 shadow-md">
                 <p class="text-blue-200 text-sm font-medium">Số dư khả dụng</p>
-                <p class="text-3xl font-bold mt-1 tracking-tight">₫ 125.000.000</p>
+                <p class="text-3xl font-bold mt-1 tracking-tight" id="userBalance">₫ 100.000.000</p>
                 <div class="mt-4 flex items-center gap-2 text-sm text-blue-200">
                     <span class="inline-flex items-center gap-1.5">
                         <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -209,18 +210,12 @@
                             <span class="block text-xs text-orange-500 mt-0.5">Gửi 18 giao dịch nhỏ trong 3 giây — Velocity Check</span>
                         </button>
 
-                        <button type="button" id="demoHugeBtn"
-                                class="w-full rounded-xl border-2 border-red-200 bg-red-50 hover:bg-red-100 px-4 py-3 text-left transition group">
-                            <span class="block text-sm font-semibold text-red-700 group-hover:text-red-800">Demo Giao Dịch Khủng</span>
-                            <span class="block text-xs text-red-500 mt-0.5">50 tỷ VND — kiểm tra hạn mức rủi ro</span>
-                        </button>
-
                         <label class="flex items-start gap-3 rounded-xl border-2 border-purple-200 bg-purple-50 px-4 py-3 cursor-pointer hover:bg-purple-100 transition">
                             <input type="checkbox" id="spoofVpnToggle"
                                    class="mt-1 w-4 h-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500">
                             <span>
                                 <span class="block text-sm font-semibold text-purple-700">Kích hoạt Giả lập VPN/IP Lạ</span>
-                                <span class="block text-xs text-purple-500 mt-0.5">Ghi đè IP bằng 203.0.113.195 — Impossible Travel</span>
+                                
                             </span>
                         </label>
                     </div>
@@ -357,7 +352,7 @@
                 ? 'http://localhost:8000/api'
                 : `${window.location.origin}/api`;
 
-            const SPOOF_FOREIGN_IP = '203.0.113.195';
+            const SPOOF_FOREIGN_IP = '10.0.0.10';
             const HUGE_TRANSACTION_AMOUNT = 50000000000;
             const SPAM_TRANSACTION_COUNT = 18;
             const SPAM_DURATION_MS = 3000;
@@ -366,7 +361,7 @@
             const SESSION_STORAGE_KEY = 'securebank_session';
 
             const DEMO_ACCOUNTS = {
-                customer1: { password: 'password', role: 'user', userId: 'user_999', displayName: 'Nguyễn Văn Khách' },
+                customer1: { password: 'password', role: 'user', userId: 'user_001', displayName: 'Nguyễn Văn Khách' },
                 admin1: { password: 'password', role: 'admin', userId: 'admin', displayName: 'Quản trị viên Hệ thống' },
             };
 
@@ -379,6 +374,8 @@
                 mlopsChart: null,
                 knownAlertIds: new Set(),
                 isSendingTransaction: false,
+                fakeBalance: 100000000,
+                wsConnection: null,
             };
 
             const elements = {
@@ -412,6 +409,9 @@
                 statPipeline: document.getElementById('statPipeline'),
                 adminLiveBadge: document.getElementById('adminLiveBadge'),
                 toastContainer: document.getElementById('toastContainer'),
+                lockModal: document.getElementById('lockModal'),
+                lockModalOkBtn: document.getElementById('lockModalOkBtn'),
+                userBalance: document.getElementById('userBalance'),
             };
 
             function saveSession(session) {
@@ -473,6 +473,39 @@
                 } else {
                     stopAdminPolling();
                 }
+            }
+
+            function updateBalanceDisplay() {
+                const formatter = new Intl.NumberFormat('vi-VN');
+                elements.userBalance.textContent = `₫ ${formatter.format(state.fakeBalance)}`;
+            }
+
+            function showLockModal() {
+                if (elements.lockModal) {
+                    elements.lockModal.classList.remove('view-hidden');
+                }
+            }
+
+            function initWebSocket() {
+                if (state.wsConnection) {
+                    state.wsConnection.close();
+                }
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = window.location.origin.includes('localhost') 
+                    ? `ws://localhost:8000/ws/${state.session.userId}` 
+                    : `${protocol}//${window.location.host}/ws/${state.session.userId}`;
+                
+                state.wsConnection = new WebSocket(wsUrl);
+                state.wsConnection.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'LOCK') {
+                            showLockModal();
+                        }
+                    } catch (e) {
+                        console.error('WS parse error:', e);
+                    }
+                };
             }
 
             function getEffectiveIpAddress() {
@@ -553,6 +586,8 @@
                         saveSession(state.session);
                         navigateAfterLogin();
                         showToast(`Chào mừng, ${localAccount.displayName}! (offline mode)`, 'info');
+                    } else if (error.message === 'ACCOUNT_LOCKED') {
+                        showLockModal();
                     } else {
                         showToast(error.message || 'Đăng nhập thất bại', 'error');
                     }
@@ -572,9 +607,12 @@
                     setView('admin');
                 } else {
                     elements.userDisplayName.textContent = state.session.displayName;
-                    elements.userAccountLabel.textContent = `Mã KH: ${state.session.userId}`;
+                    // elements.userAccountLabel.textContent = `Mã KH: ${state.session.userId}`;
+                    state.fakeBalance = 100000000;
+                    updateBalanceDisplay();
                     updateIpDisplay();
                     setView('user');
+                    initWebSocket();
                 }
             }
 
@@ -591,6 +629,10 @@
                     }
                 }
 
+                if (state.wsConnection) {
+                    state.wsConnection.close();
+                    state.wsConnection = null;
+                }
                 state.session = null;
                 clearSession();
                 stopAdminPolling();
@@ -632,17 +674,15 @@
 
                     if (result.status === "blocked") {
                         // 1. Bật thông báo khẩn cấp
-                        showToast(result.message, 'error');
-                        alert(`🚨 TÀI KHOẢN BỊ KHÓA!\n\n${result.message}\n${result.support_contact}`);
+                        showLockModal();
                         
                         // 2. Đóng băng toàn bộ các nút thao tác giao dịch
                         elements.transferSubmitBtn.disabled = true;
-                        elements.transferSubmitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-                        elements.transferSubmitBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                        elements.transferSubmitBtn.classList.remove('bg-brand-600', 'hover:bg-brand-700');
+                        elements.transferSubmitBtn.classList.add('bg-slate-400', 'cursor-not-allowed');
                         elements.transferSubmitBtn.innerHTML = "🔒 BỊ KHÓA";
 
                         if (elements.demoSpamBtn) elements.demoSpamBtn.disabled = true;
-                        if (elements.demoHugeBtn) elements.demoHugeBtn.disabled = true;
 
                         return { success: false, isBlocked: true, message: result.message };
                     }
@@ -650,6 +690,10 @@
 
                     // Xử lý thành công
                     if (response.ok && result.status === "success") {
+                        if (!isSimulated) {
+                            state.fakeBalance -= amount;
+                            updateBalanceDisplay();
+                        }
                         return { success: true, eventId: result.event_id, message: result.message };
                     }
 
@@ -696,44 +740,129 @@
             }
 
             async function runSpamDemo() {
+                // 1. UI State: Disable immediately and change text to 'Đang tấn công...'
+                const originalHTML = elements.demoSpamBtn.innerHTML;
                 elements.demoSpamBtn.disabled = true;
-                elements.demoHugeBtn.disabled = true;
-                elements.demoProgress.classList.remove('hidden');
+                elements.demoSpamBtn.innerHTML = `
+                    <span class="block text-sm font-semibold text-orange-700">Đang tấn công...</span>
+                    <span class="block text-xs text-orange-500 mt-0.5">Đang gửi 15 giao dịch liên tiếp</span>
+                `;
 
+                // Show progress bar
+                if (elements.demoProgress) {
+                    elements.demoProgress.classList.remove('hidden');
+                    elements.demoProgressLabel.textContent = 'Đang tiến hành spam...';
+                    elements.demoProgressCount.textContent = `0/15`;
+                    if (elements.demoProgressBar) {
+                        elements.demoProgressBar.style.width = '0%';
+                    }
+                }
+
+                // 2. Logic Spam: Retrieve user_id from localStorage or sessionStorage
+                let userId = 'user_004'; // Default/fallback
+                try {
+                    const savedSession = localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY);
+                    if (savedSession) {
+                        const parsed = JSON.parse(savedSession);
+                        if (parsed && parsed.userId) {
+                            userId = parsed.userId;
+                        }
+                    } else if (state.session && state.session.userId) {
+                        userId = state.session.userId;
+                    }
+                } catch (error) {
+                    console.warn('Lỗi lấy user_id từ storage:', error);
+                }
+
+                const ipAddress = getEffectiveIpAddress();
+                const totalRequests = 15;
                 let successCount = 0;
                 let failCount = 0;
-                const total = SPAM_TRANSACTION_COUNT;
-                const delayMs = Math.floor(SPAM_DURATION_MS / total);
 
-                elements.demoProgressLabel.textContent = 'Đang spam giao dịch...';
-                elements.demoProgressCount.textContent = `0/${total}`;
+                console.log(`[Botnet Simulation] Bắt đầu spam 15 giao dịch cho User: ${userId}, IP: ${ipAddress}`);
 
-                for (let index = 0; index < total; index++) {
-                    const result = await sendTransaction(SPAM_SMALL_AMOUNT + index * 1000, true, true);
-                    if (result.success) {
-                        successCount++;
-                    } else if (!result.skipped) {
+                // 3. Loop 15 times
+                for (let index = 1; index <= totalRequests; index++) {
+                    // Generate random amount from 10,000 VND to 50,000 VND
+                    const randomAmount = Math.floor(Math.random() * (50000 - 10000 + 1)) + 10000;
+
+                    const payload = {
+                        user_id: userId,
+                        amount: randomAmount,
+                        ip_address: ipAddress,
+                        is_simulated: true
+                    };
+
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/transactions`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await response.json();
+
+                        if (response.ok && result.status === 'success') {
+                            successCount++;
+                            console.log(`[Spam Botnet] Gửi thành công request ${index}/${totalRequests}. Số tiền: ${randomAmount.toLocaleString()} VND. Event ID: ${result.event_id}`);
+                        } else if (result.status === 'blocked') {
+                            failCount++;
+                            console.log(`[Spam Botnet] Request ${index}/${totalRequests} bị chặn vĩnh viễn (Tài khoản đã bị KHÓA)!`);
+                            
+                            // Trigger safety lock UI
+                            showLockModal();
+                            elements.transferSubmitBtn.disabled = true;
+                            elements.transferSubmitBtn.classList.remove('bg-brand-600', 'hover:bg-brand-700');
+                            elements.transferSubmitBtn.classList.add('bg-slate-400', 'cursor-not-allowed');
+                            elements.transferSubmitBtn.innerHTML = "🔒 BỊ KHÓA";
+                            break; // Stop spamming since account is locked
+                        } else {
+                            failCount++;
+                            console.warn(`[Spam Botnet] Gửi thất bại request ${index}/${totalRequests}. Lỗi: ${result.detail || result.message}`);
+                        }
+                    } catch (error) {
                         failCount++;
+                        console.error(`[Spam Botnet] Lỗi kết nối request ${index}/${totalRequests}:`, error);
                     }
 
-                    const progress = Math.round(((index + 1) / total) * 100);
-                    elements.demoProgressBar.style.width = `${progress}%`;
-                    elements.demoProgressCount.textContent = `${index + 1}/${total}`;
+                    // Update UI progress bar
+                    if (elements.demoProgressCount) {
+                        elements.demoProgressCount.textContent = `${index}/${totalRequests}`;
+                    }
+                    if (elements.demoProgressBar) {
+                        const progressPercent = Math.round((index / totalRequests) * 100);
+                        elements.demoProgressBar.style.width = `${progressPercent}%`;
+                    }
 
-                    if (index < total - 1) {
-                        await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
+                    // 4. Delay 150ms between requests
+                    if (index < totalRequests) {
+                        await new Promise(r => setTimeout(r, 150));
                     }
                 }
 
-                elements.demoProgress.classList.add('hidden');
-                elements.demoSpamBtn.disabled = false;
-                elements.demoHugeBtn.disabled = false;
-
-                if (failCount === 0) {
-                    showToast(`Demo Spam hoàn tất: ${successCount}/${total} giao dịch đã gửi — kiểm tra Velocity Check`, 'warning');
-                } else {
-                    showToast(`Demo Spam: ${successCount} thành công, ${failCount} thất bại`, 'warning');
+                // Hide progress bar after spam finishes
+                if (elements.demoProgress) {
+                    elements.demoProgress.classList.add('hidden');
                 }
+
+                // 5. End: re-enable button and restore original text
+                const checkLocked = elements.transferSubmitBtn.innerHTML.includes("🔒 BỊ KHÓA");
+                if (elements.demoSpamBtn) {
+                    if (checkLocked) {
+                        elements.demoSpamBtn.disabled = true;
+                        elements.demoSpamBtn.innerHTML = `
+                            <span class="block text-sm font-semibold text-orange-700">🔒 ĐÃ BỊ KHÓA</span>
+                            <span class="block text-xs text-orange-500 mt-0.5">Tài khoản bị khóa do phát hiện gian lận</span>
+                        `;
+                    } else {
+                        elements.demoSpamBtn.disabled = false;
+                        elements.demoSpamBtn.innerHTML = originalHTML;
+                    }
+                }
+
+                // Show toast warning
+                showToast(`Demo Spam hoàn tất: ${successCount} thành công, ${failCount} thất bại.`, 'warning');
+                console.log(`[Botnet Simulation] Hoàn tất. Thành công: ${successCount}/${totalRequests}, Thất bại: ${failCount}/${totalRequests}`);
             }
 
             async function runHugeDemo() {
@@ -984,9 +1113,15 @@
                 elements.userLogoutBtn.addEventListener('click', logout);
                 elements.adminLogoutBtn.addEventListener('click', logout);
                 elements.transferForm.addEventListener('submit', handleTransferSubmit);
-                elements.demoSpamBtn.addEventListener('click', runSpamDemo);
-                elements.demoHugeBtn.addEventListener('click', runHugeDemo);
+                if (elements.demoSpamBtn) elements.demoSpamBtn.addEventListener('click', runSpamDemo);
                 elements.spoofVpnToggle.addEventListener('change', updateIpDisplay);
+                
+                if (elements.lockModalOkBtn) {
+                    elements.lockModalOkBtn.addEventListener('click', function() {
+                        clearSession();
+                        window.location.reload();
+                    });
+                }
             }
 
             function init() {
