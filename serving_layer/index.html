@@ -231,6 +231,61 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Real-time AI Risk Evaluation Card (Shadow Mode) -->
+            <div id="aiRiskCard" class="bg-white rounded-xl shadow-md p-6 border border-slate-100 transition-all duration-500 mt-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                            <span class="relative flex h-2.5 w-2.5">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                            </span>
+                            Đánh giá Rủi ro AI Real-time (Shadow Mode)
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">So sánh song song mô hình Champion (XGBoost) & Challenger (Isolation Forest)</p>
+                    </div>
+                    <span id="aiRiskBadge" class="inline-flex px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        An Toàn
+                    </span>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Champion Model (XGBoost) -->
+                    <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                <span class="text-sm font-semibold text-slate-700">AI Champion (XGBoost)</span>
+                            </div>
+                            <span id="championScoreText" class="text-sm font-bold text-blue-600">0.0%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-3 mb-2.5">
+                            <div id="championProgressBar" class="bg-blue-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <p id="championStatusText" class="text-xs text-slate-500 flex items-center gap-1">
+                            <span>Trạng thái:</span> <span class="font-medium text-emerald-600">Bình Thường</span>
+                        </p>
+                    </div>
+                    
+                    <!-- Challenger Model (Isolation Forest) -->
+                    <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                                <span class="text-sm font-semibold text-slate-700">AI Challenger (Isolation Forest)</span>
+                            </div>
+                            <span id="challengerScoreText" class="text-sm font-bold text-purple-600">0.0%</span>
+                        </div>
+                        <div class="w-full bg-slate-200 rounded-full h-3 mb-2.5">
+                            <div id="challengerProgressBar" class="bg-purple-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <p id="challengerStatusText" class="text-xs text-slate-500 flex items-center gap-1">
+                            <span>Shadow Mode:</span> <span class="font-medium text-slate-600">Chỉ Cảnh Báo</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
         </main>
     </section>
 
@@ -412,6 +467,14 @@
                 lockModal: document.getElementById('lockModal'),
                 lockModalOkBtn: document.getElementById('lockModalOkBtn'),
                 userBalance: document.getElementById('userBalance'),
+                championScoreText: document.getElementById('championScoreText'),
+                championProgressBar: document.getElementById('championProgressBar'),
+                championStatusText: document.getElementById('championStatusText'),
+                challengerScoreText: document.getElementById('challengerScoreText'),
+                challengerProgressBar: document.getElementById('challengerProgressBar'),
+                challengerStatusText: document.getElementById('challengerStatusText'),
+                aiRiskCard: document.getElementById('aiRiskCard'),
+                aiRiskBadge: document.getElementById('aiRiskBadge'),
             };
 
             function saveSession(session) {
@@ -501,11 +564,107 @@
                         const data = JSON.parse(event.data);
                         if (data.type === 'LOCK') {
                             showLockModal();
+                        } else if (data.type === 'REAL_TIME_SCORE') {
+                            updateAiRiskUI(data.champion_score, data.challenger_score);
                         }
                     } catch (e) {
                         console.error('WS parse error:', e);
                     }
                 };
+            }
+
+            function updateAiRiskUI(championScore, challengerScore) {
+                if (!elements.championScoreText || !elements.challengerScoreText) return;
+
+                // Update text displays
+                elements.championScoreText.textContent = `${championScore.toFixed(1)}%`;
+                elements.challengerScoreText.textContent = `${challengerScore.toFixed(1)}%`;
+
+                // Update progress bars widths
+                elements.championProgressBar.style.width = `${championScore}%`;
+                elements.challengerProgressBar.style.width = `${challengerScore}%`;
+
+                // Determine risk level based on the Champion (XGBoost) model score
+                let riskText = "An Toàn";
+                let badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                let cardBorderClass = "border-slate-100";
+                let championStatus = "Bình Thường";
+                let championStatusClass = "text-emerald-600";
+                let challengerStatus = "Shadow Mode - Chỉ cảnh báo";
+
+                if (championScore > 80.0) {
+                    riskText = "🚨 RỦI RO CAO";
+                    badgeClass = "bg-red-500 text-white border-red-600 animate-pulse";
+                    cardBorderClass = "border-red-500 ring-2 ring-red-500/20";
+                    championStatus = "Chặn giao dịch (Nguy cơ gian lận!)";
+                    championStatusClass = "text-red-600 font-bold";
+                } else if (championScore > 50.0) {
+                    riskText = "⚠️ Cảnh Báo";
+                    badgeClass = "bg-amber-100 text-amber-800 border-amber-300";
+                    cardBorderClass = "border-amber-300 ring-2 ring-amber-300/10";
+                    championStatus = "Tăng giám sát (Trung bình)";
+                    championStatusClass = "text-amber-600 font-semibold";
+                }
+
+                // Update Challenger Status
+                let challengerStatusClass = "text-slate-600";
+                if (challengerScore > 80.0) {
+                    challengerStatus = "Shadow Mode - Chỉ cảnh báo (Bất thường)";
+                    challengerStatusClass = "text-purple-600 font-bold";
+                } else if (challengerScore > 50.0) {
+                    challengerStatus = "Shadow Mode - Chỉ cảnh báo (Dấu hiệu lạ)";
+                    challengerStatusClass = "text-purple-500 font-medium";
+                }
+
+                // Update colors and styles in UI
+                elements.aiRiskBadge.textContent = riskText;
+                elements.aiRiskBadge.className = `inline-flex px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${badgeClass} border`;
+                
+                // Update card border classes
+                elements.aiRiskCard.className = `bg-white rounded-xl shadow-md p-6 border ${cardBorderClass} transition-all duration-500 mt-6`;
+
+                // Update status text
+                elements.championStatusText.innerHTML = `Trạng thái: <span class="${championStatusClass}">${championStatus}</span>`;
+                elements.challengerStatusText.innerHTML = `Shadow Mode: <span class="${challengerStatusClass}">${challengerStatus}</span>`;
+
+                // Update progress bar colors based on score
+                updateProgressBarColor(elements.championProgressBar, championScore, 'blue');
+                updateProgressBarColor(elements.challengerProgressBar, challengerScore, 'purple');
+
+                // If champion score is extremely high, trigger block modal with a delay to let the user see the scores
+                if (championScore > 80.0) {
+                    setTimeout(() => {
+                        showLockModal();
+                        elements.transferSubmitBtn.disabled = true;
+                        elements.transferSubmitBtn.classList.remove('bg-brand-600', 'hover:bg-brand-700');
+                        elements.transferSubmitBtn.classList.add('bg-slate-400', 'cursor-not-allowed');
+                        elements.transferSubmitBtn.innerHTML = "🔒 BỊ KHÓA";
+                        if (elements.demoSpamBtn) {
+                            elements.demoSpamBtn.disabled = true;
+                            elements.demoSpamBtn.innerHTML = `
+                                <span class="block text-sm font-semibold text-orange-700">🔒 ĐÃ BỊ KHÓA</span>
+                                <span class="block text-xs text-orange-500 mt-0.5">Tài khoản bị khóa do phát hiện gian lận</span>
+                            `;
+                        }
+                    }, 1000);
+                }
+            }
+
+            function updateProgressBarColor(progressBar, score, defaultColor) {
+                // Remove existing colors
+                progressBar.classList.remove('bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-red-500');
+                
+                if (score > 80.0) {
+                    progressBar.classList.add('bg-red-500');
+                } else if (score > 50.0) {
+                    progressBar.classList.add('bg-amber-500');
+                } else {
+                    if (defaultColor === 'blue') {
+                        progressBar.classList.add('bg-blue-500');
+                    } else {
+                        progressBar.classList.add('bg-purple-500');
+                    }
+                }
             }
 
             function getEffectiveIpAddress() {
@@ -690,6 +849,9 @@
 
                     // Xử lý thành công
                     if (response.ok && result.status === "success") {
+                        if (typeof updateAiRiskUI === 'function' && result.champion_score !== undefined) {
+                            updateAiRiskUI(result.champion_score, result.challenger_score);
+                        }
                         if (!isSimulated) {
                             state.fakeBalance -= amount;
                             updateBalanceDisplay();

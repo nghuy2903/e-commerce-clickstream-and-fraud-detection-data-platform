@@ -94,7 +94,7 @@ class ParseEventMapper(MapFunction):
 class FraudScoringProcessFunction(KeyedProcessFunction):
     def open(self, runtime_context: RuntimeContext) -> None:
         # 1. Khởi tạo XGBoost & Preprocessor
-        self._fraud_threshold = 0.2
+        self._fraud_threshold = 0.8
         model_dir = Path("/tmp/models")
         self.model = xgb.Booster()
         self.model.load_model(str(model_dir / "xgboost_fraud_model.json"))

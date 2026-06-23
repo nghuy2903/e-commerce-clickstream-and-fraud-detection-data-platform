@@ -18,6 +18,11 @@ from kafka import KafkaProducer
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+import xgboost as xgb
+import joblib
+import numpy as np
+import pandas as pd
+
 app = FastAPI(title="Banking Fraud Detection API")
 
 app.add_middleware(
@@ -66,6 +71,95 @@ DEMO_USERS: dict[str, dict[str, str]] = {
 ACTIVE_SESSIONS: dict[str, dict[str, Any]] = {}
 
 SERVING_DIR = Path(__file__).resolve().parent
+
+# --- KHỞI TẠO VÀ NẠP CÁC MÔ HÌNH AI ---
+MODELS_DIR = Path(__file__).resolve().parent.parent / "streaming_layer" / "models"
+
+# Nạp Champion model (XGBoost) và preprocessor config
+XGB_MODEL = xgb.Booster()
+XGB_MODEL.load_model(str(MODELS_DIR / "xgboost_fraud_model.json"))
+
+with open(MODELS_DIR / "preprocessor_artifact.json", "r", encoding="utf-8") as f:
+    PREPROCESSOR = json.load(f)
+
+# Nạp Challenger model (Isolation Forest) và metadata
+IF_MODEL = joblib.load(MODELS_DIR / "isolation_forest_model.joblib")
+IF_METADATA = joblib.load(MODELS_DIR / "isolation_forest_metadata.joblib")
+IF_RAW_MIN = IF_METADATA["raw_min"]
+IF_RAW_MAX = IF_METADATA["raw_max"]
+
+# Bộ nhớ đệm lưu lịch sử giao dịch tạm thời của từng user (5 phút) để tính Velocity features
+USER_TX_HISTORY: dict[str, list[dict]] = {}
+
+def extract_features_and_score(user_id: str, amount: float, ip_address: str) -> tuple[float, float]:
+    """
+    Trích xuất đặc trưng và tính điểm từ cả 2 mô hình (XGBoost & Isolation Forest).
+    Trả về: (champion_score, challenger_score) chuẩn hóa về thang điểm 0-100.
+    """
+    now = datetime.utcnow()
+    now_ts = now.timestamp()
+    
+    # 1. Cập nhật lịch sử giao dịch trong vòng 5 phút (300 giây)
+    history = USER_TX_HISTORY.setdefault(user_id, [])
+    history = [tx for tx in history if (now_ts - tx["ts"]) <= 300]
+    
+    # Thêm giao dịch hiện tại
+    history.append({"ts": now_ts, "amt": amount})
+    USER_TX_HISTORY[user_id] = history
+    
+    # Tính các thông số velocity
+    tx_count_1h = float(len(history))
+    total_amount_1h = sum(tx["amt"] for tx in history)
+    amount_avg_1h = total_amount_1h / tx_count_1h if tx_count_1h > 0 else amount
+    amount_vs_avg = amount / amount_avg_1h if amount_avg_1h > 0 else 1.0
+    
+    # 2. IP frequency và Hour of day
+    ip_map = PREPROCESSOR.get("ip_frequency_map", {}) or PREPROCESSOR.get("ip_freq_map", {})
+    ip_address_freq = float(ip_map.get(ip_address, 1.0))
+    hour_of_day = float(now.hour)
+    
+    # 3. One-hot encoding cho event_type
+    categories = PREPROCESSOR.get("event_type_categories", []) or PREPROCESSOR.get("event_categories", [])
+    if not categories:
+        categories = ["LOGIN", "LOGIN_FAILED", "LOGIN_SUCCESS", "LOGOUT", "TRANSFER", "VIEW_BALANCE", "WITHDRAW"]
+    one_hot = [1.0 if cat == "TRANSFER" else 0.0 for cat in categories]
+    
+    # Ráp đầy đủ 13 đặc trưng
+    features = [
+        amount, tx_count_1h, amount_avg_1h, 
+        amount_vs_avg, hour_of_day, ip_address_freq
+    ] + one_hot
+    
+    feature_names = [
+        "amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day", "ip_address_freq"
+    ] + [f"event_type_{cat}" for cat in categories]
+    
+    # --- MODEL INFERENCE ---
+    df_feat = pd.DataFrame([features], columns=feature_names)
+    
+    # A. Champion (XGBoost)
+    dmatrix = xgb.DMatrix(df_feat)
+    xgb_prob = float(XGB_MODEL.predict(dmatrix)[0])
+    champion_score = round(xgb_prob * 100, 2)
+    
+    # B. Challenger (Isolation Forest)
+    raw_score = float(IF_MODEL.decision_function(df_feat)[0])
+    # Min-Max Scaling sang [0, 100]
+    if IF_RAW_MAX - IF_RAW_MIN > 0:
+        if_risk = 100.0 * (IF_RAW_MAX - raw_score) / (IF_RAW_MAX - IF_RAW_MIN)
+    else:
+        if_risk = 50.0
+    challenger_score = round(float(np.clip(if_risk, 0.0, 100.0)), 2)
+    
+    # C. Rule overrides (Luật IP lạ & Spam velocity)
+    # Nếu IP lạ và gửi >= 3 giao dịch trong 5 phút
+    is_strange_ip = ip_address not in ip_map
+    if is_strange_ip and tx_count_1h >= 3:
+        champion_score = 99.0
+        challenger_score = 95.0
+        print(f"[OVERRIDE] IP lạ và spam giao dịch! Ép điểm Champion=99.0, Challenger=95.0")
+        
+    return champion_score, challenger_score
 
 
 class LoginRequest(BaseModel):
@@ -303,6 +397,59 @@ async def create_transaction(transaction: TransactionRequest):
         "is_simulated": transaction.is_simulated,
     }
 
+    # Tính toán điểm số từ 2 mô hình thực tế
+    try:
+        champion_score, challenger_score = extract_features_and_score(
+            transaction.user_id, transaction.amount, transaction.ip_address
+        )
+    except Exception as score_err:
+        print(f"Lỗi khi tính điểm ML: {score_err}")
+        champion_score, challenger_score = 10.0, 8.0  # Fallback an toàn
+
+    # Nếu champion_score vượt ngưỡng (> 80.0), ghi nhận ngay vào bảng fraud_alerts để chặn giao dịch kế tiếp
+    if champion_score > 80.0:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            risk_level = "CRITICAL" if champion_score > 90 else "HIGH"
+            rule_name = "XGBoost Champion Model (API)"
+            alert_msg = f"XGBoost Champion Model (API) flagged TRANSFER amount={transaction.amount} ip={transaction.ip_address}"
+            cursor.execute(
+                """
+                INSERT INTO fraud_alerts (alert_id, user_id, source_event_id, risk_score, risk_level, rule_name, alert_message, detected_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    transaction.user_id,
+                    event["event_id"],
+                    champion_score / 100.0,
+                    risk_level,
+                    rule_name,
+                    alert_msg,
+                    datetime.utcnow()
+                )
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print(f"[API] Đã tự động ghi nhận cảnh báo rủi ro cao vào DB cho User: {transaction.user_id} (Champion Score: {champion_score}%)")
+        except Exception as db_err:
+            print(f"Lỗi ghi nhận cảnh báo rủi ro cao vào DB: {db_err}")
+
+    # Gửi điểm số thật qua kênh WebSocket gửi xuống Frontend ngay lập tức
+    try:
+        ws_msg = {
+            "type": "REAL_TIME_SCORE",
+            "champion_score": champion_score,
+            "challenger_score": challenger_score,
+            "amount": transaction.amount,
+            "event_id": event["event_id"]
+        }
+        await manager.send_personal_message(json.dumps(ws_msg), transaction.user_id)
+    except Exception as ws_err:
+        print(f"Lỗi khi gửi điểm qua WebSocket: {ws_err}")
+
     try:
         producer.send(KAFKA_TOPIC, value=event)
         producer.flush()
@@ -311,6 +458,8 @@ async def create_transaction(transaction: TransactionRequest):
             "message": "Giao dịch đã được chấp nhận và đưa vào hàng đợi xử lý",
             "event_id": event["event_id"],
             "accepted": True,
+            "champion_score": champion_score,
+            "challenger_score": challenger_score,
         }
     except Exception as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
