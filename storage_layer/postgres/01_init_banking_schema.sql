@@ -119,6 +119,7 @@ CREATE TABLE fraud_alerts (
     transaction_id      UUID,
     source_event_id     UUID,
     risk_score          NUMERIC(5, 4)       NOT NULL,
+    challenger_score    DECIMAL(5, 2),
     risk_level          fraud_risk_level    NOT NULL,
     rule_name           VARCHAR(128)        NOT NULL,
     alert_message       TEXT,
