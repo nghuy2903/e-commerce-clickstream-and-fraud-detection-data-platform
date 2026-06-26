@@ -105,7 +105,7 @@ class ChampionModelScorer:
 
     def _encode_ip(self, ip_address: str) -> float:
         """Frequency Encoding cho IP giống hệt luồng Train."""
-        ip_map = self.preprocessor.get("ip_freq_map", {})
+        ip_map = self.preprocessor.get("ip_frequency_map", {}) or self.preprocessor.get("ip_freq_map", {})
         return float(ip_map.get(ip_address, 1))  # Mặc định là 1 nếu IP lạ xuất hiện
 
     def _encode_event_type(self, event_type: str) -> list[float]:
@@ -129,7 +129,8 @@ class ChampionModelScorer:
         amount_avg_1h = amount
         amount_vs_avg = 50.0       
         hour_of_day = float(datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")).hour)
-        ip_address_freq = float(self.preprocessor.get("ip_freq_map", {}).get(event.ip_address, 1.0))
+        ip_map = self.preprocessor.get("ip_frequency_map", {}) or self.preprocessor.get("ip_freq_map", {})
+        ip_address_freq = float(ip_map.get(event.ip_address, 1.0))
         
         # SỬ DỤNG LOGGER.WARNING THAY VÌ PRINT ĐỂ ÉP FLINK IN RA LOG
         logger.warning(f"[DEBUG MODEL] Kích hoạt Spam! IP: {event.ip_address} | Số giao dịch: {tx_count_1h}")
@@ -139,8 +140,8 @@ class ChampionModelScorer:
         one_hot = [1.0 if event.event_type == cat else 0.0 for cat in categories]
         
         # Ráp 13 cột
-        features = [amount, tx_count_1h, amount_avg_1h, amount_vs_avg, hour_of_day, ip_address_freq] + one_hot
-        feature_names = ["amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day", "ip_address_freq", "event_type_LOGIN", "event_type_LOGIN_FAILED", "event_type_LOGIN_SUCCESS", "event_type_LOGOUT", "event_type_TRANSFER", "event_type_VIEW_BALANCE", "event_type_WITHDRAW"]
+        features = [amount, tx_count_1h, amount_avg_1h, amount_vs_avg, hour_of_day]
+        feature_names = ["amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day"]
         
         # Inference
         dmatrix = xgb.DMatrix(pd.DataFrame([features], columns=feature_names))

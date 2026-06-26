@@ -94,7 +94,7 @@ class ParseEventMapper(MapFunction):
 class FraudScoringProcessFunction(KeyedProcessFunction):
     def open(self, runtime_context: RuntimeContext) -> None:
         # 1. Khởi tạo XGBoost & Preprocessor
-        self._fraud_threshold = 0.8
+        self._fraud_threshold = 0.8336
         model_dir = Path("/tmp/models")
         self.model = xgb.Booster()
         self.model.load_model(str(model_dir / "xgboost_fraud_model.json"))
@@ -136,16 +136,14 @@ class FraudScoringProcessFunction(KeyedProcessFunction):
         amount_vs_avg = float(event.amount) / amount_avg_1h if amount_avg_1h > 0 else 1.0
 
         # --- LOGIC 2: NHẬN DIỆN MỌI IP LẠ (DYNAMIC RULE) ---
-        known_ips = self.preprocessor.get("ip_freq_map", {})
+        known_ips = self.preprocessor.get("ip_frequency_map", {}) or self.preprocessor.get("ip_freq_map", {})
         is_strange_ip = event.ip_address not in known_ips
         ip_address_freq = float(known_ips.get(event.ip_address, 1.0))
         
         if is_strange_ip:
-            logger.warning(f"[RULE-BASED] IP hoàn toàn mới: '{event.ip_address}'")
-            # Ép điểm 99% nếu IP lạ VÀ đang có dấu hiệu spam (>= 3 giao dịch/giờ)
-            if tx_count_1h >= 3:
-                yield self._create_alert(event, 99.0, "Spam từ IP lạ")
-                return
+            logger.warning(f"[RULE-BASED] IP hoàn toàn mới: '{event.ip_address}' -> Tự động gắn nhãn gian lận")
+            yield self._create_alert(event, 99.0, "IP lạ chưa xác thực")
+            return
 
         # --- LOGIC 3: XGBoost SCORING ---
         hour_of_day = float(datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")).hour)
@@ -160,13 +158,10 @@ class FraudScoringProcessFunction(KeyedProcessFunction):
         # Ráp chuẩn xác 13 cột (6 cột số + 7 cột sự kiện)
         features = [
             float(event.amount), tx_count_1h, amount_avg_1h, 
-            amount_vs_avg, hour_of_day, ip_address_freq
-        ] + one_hot
-        
+            amount_vs_avg, hour_of_day
+        ]
         feature_names = [
-            "amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day", "ip_address_freq",
-            "event_type_LOGIN", "event_type_LOGIN_FAILED", "event_type_LOGIN_SUCCESS", 
-            "event_type_LOGOUT", "event_type_TRANSFER", "event_type_VIEW_BALANCE", "event_type_WITHDRAW"
+            "amount", "tx_count_1h", "amount_avg_1h", "amount_vs_avg", "hour_of_day"
         ]
         
         # Inference an toàn
