@@ -170,4 +170,38 @@ CREATE TRIGGER trg_accounts_updated_at
     BEFORE UPDATE ON accounts
     FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
+-- ---------------------------------------------------------------------------
+-- Gold Layer tables for Admin Dashboard Analytics
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS gold_system_performance (
+    minute_bucket       TIMESTAMPTZ     NOT NULL,
+    event_count         INTEGER         NOT NULL DEFAULT 0,
+    avg_latency_seconds NUMERIC(8, 3)   NOT NULL DEFAULT 0.0,
+    CONSTRAINT pk_gold_sys_perf PRIMARY KEY (minute_bucket)
+);
+
+CREATE TABLE IF NOT EXISTS gold_transaction_heatmap (
+    weekday             INTEGER         NOT NULL,
+    hour_bucket         INTEGER         NOT NULL,
+    transaction_count   INTEGER         NOT NULL DEFAULT 0,
+    CONSTRAINT pk_gold_heatmap PRIMARY KEY (weekday, hour_bucket)
+);
+
+CREATE TABLE IF NOT EXISTS gold_protected_assets (
+    day_bucket          DATE            NOT NULL,
+    valid_amount        NUMERIC(18, 2)  NOT NULL DEFAULT 0.0,
+    blocked_amount      NUMERIC(18, 2)  NOT NULL DEFAULT 0.0,
+    CONSTRAINT pk_gold_assets PRIMARY KEY (day_bucket)
+);
+
+CREATE TABLE IF NOT EXISTS gold_model_divergence (
+    alert_id            UUID            NOT NULL,
+    user_id             VARCHAR(64)     NOT NULL,
+    xgboost_score       NUMERIC(5, 2)   NOT NULL,
+    iforest_score       NUMERIC(5, 2)   NOT NULL,
+    risk_level          VARCHAR(16)     NOT NULL,
+    detected_at         TIMESTAMPTZ     NOT NULL,
+    CONSTRAINT pk_gold_divergence PRIMARY KEY (alert_id)
+);
+
 COMMIT;
