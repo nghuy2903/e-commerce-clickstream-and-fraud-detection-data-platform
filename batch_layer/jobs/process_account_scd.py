@@ -141,8 +141,21 @@ def build_account_balance_snapshot(raw_df: DataFrame) -> DataFrame:
         )
     )
 
+    # Đọc danh sách user bị cảnh báo HIGH/CRITICAL từ PostgreSQL
+    spark = SparkSession.getActiveSession()
+    alerts_df = spark.read.jdbc(
+        url="jdbc:postgresql://postgres:5432/banking_mlops",
+        table="fraud_alerts",
+        properties={
+            "user": "admin",
+            "password": "admin123",
+            "driver": "org.postgresql.Driver"
+        }
+    ).filter("risk_level IN ('HIGH', 'CRITICAL')").select("user_id").distinct().withColumn("is_flagged", F.lit(True))
+
     snapshot = (
         all_users.join(latest_per_user, on="user_id", how="left")
+        .join(alerts_df, on="user_id", how="left")
         .withColumn(
             "balance",
             F.coalesce(F.col("balance"), F.lit(DEFAULT_OPENING_BALANCE)).cast("decimal(18,2)"),
@@ -153,15 +166,11 @@ def build_account_balance_snapshot(raw_df: DataFrame) -> DataFrame:
         )
         .withColumn(
             "account_status",
-            F.when(F.col("balance") < 0, F.lit("LOCKED"))
-            .when(F.col("balance") < 1000, F.lit("WARNING"))
-            .otherwise(F.lit("ACTIVE")),
+            F.when(F.col("is_flagged") == True, F.lit("LOCKED")).otherwise(F.lit("ACTIVE")),
         )
         .withColumn(
             "status_reason",
-            F.when(F.col("balance") < 0, F.lit("Negative balance detected"))
-            .when(F.col("balance") < 1000, F.lit("Low balance warning"))
-            .otherwise(F.lit(None).cast("string")),
+            F.when(F.col("is_flagged") == True, F.lit("Suspicious activity flagged by ML model")).otherwise(F.lit(None).cast("string")),
         )
         .select(
             "account_id",

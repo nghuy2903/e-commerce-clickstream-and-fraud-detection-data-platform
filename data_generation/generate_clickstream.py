@@ -66,7 +66,7 @@ class BankingSimulator:
         self._fraud_ratio = fraud_ratio
 
         self._fast_forward = fast_forward
-        self._simulated_time = datetime.now(timezone.utc) - timedelta(days=30)
+        self._simulated_time = datetime.now(timezone.utc) - timedelta(days=10)
 
         self._normal_chain = MarkovChain(NORMAL_TRANSITIONS, "LOGIN")
         self._fraud_chain = MarkovChain(FRAUD_TRANSITIONS, "LOGIN_FAILED")
@@ -84,8 +84,8 @@ class BankingSimulator:
 
     def _get_and_advance_timestamp(self) -> str:
         if self._fast_forward:
-            # Tua nhanh 3-7s cho mỗi sự kiện
-            self._simulated_time += timedelta(seconds=random.uniform(3.0, 7.0))
+            # Tua nhanh 10-17s cho mỗi sự kiện để trải đều 7 ngày (từ 18 đến 25/06)
+            self._simulated_time += timedelta(seconds=random.uniform(10.0, 17.0))
             return self._simulated_time.isoformat()
         return datetime.now(timezone.utc).isoformat()
 

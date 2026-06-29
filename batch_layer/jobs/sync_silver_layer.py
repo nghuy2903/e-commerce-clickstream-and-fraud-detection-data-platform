@@ -48,18 +48,10 @@ def run_silver_pipeline(spark: SparkSession):
     # 2. Lọc các giao dịch có event_type hợp lệ
     valid_tx_df = cleaned_df.filter("event_type IN ('TRANSFER', 'WITHDRAW', 'DEPOSIT')")
 
-    # 3. Lấy thông tin tài khoản để map account_id
-    # Đọc từ bảng SCD Type 2 account_history
-    account_history = spark.read.table("local.dim.account_history").filter("is_current = true")
-
-    # Join để lấy account_id cho transactions
-    silver_tx_df = valid_tx_df.join(
-        account_history.select("user_id", "account_id"),
-        on="user_id",
-        how="inner"
-    ).select(
+    # 3. Trực tiếp ánh xạ account_id bằng user_id (mỗi user coi như một tài khoản)
+    silver_tx_df = valid_tx_df.select(
         F.col("event_id").alias("transaction_id"),
-        F.col("account_id"),
+        F.col("user_id").alias("account_id"),
         F.col("user_id"),
         F.col("event_type"),
         F.col("amount"),
