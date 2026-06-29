@@ -76,6 +76,7 @@ class FraudAlertRecord:
     source_event_id: str
     user_id: str
     risk_score: float
+    challenger_score: float
     risk_level: str
     rule_name: str
     alert_message: str
@@ -215,10 +216,21 @@ class FraudScoringMapper(MapFunction):
             risk_score_0_100,
         )
 
+        # Giả lập chấm điểm mô hình Challenger (Isolation Forest)
+        # Isolation Forest chấm điểm từ 0 đến 100, càng cao càng bất thường
+        suspicious_ips = ("192.168.1.99", "10.0.0.88", "203.0.113.42")
+        if event.ip_address in suspicious_ips:
+            challenger_score = round(random.uniform(75.0, 99.9), 2)
+        elif event.amount > 75000:
+            challenger_score = round(random.uniform(60.0, 85.0), 2)
+        else:
+            challenger_score = round(random.uniform(5.0, 45.0), 2)
+
         return FraudAlertRecord(
             source_event_id=event.event_id,
             user_id=event.user_id,
             risk_score=risk_score_db,
+            challenger_score=challenger_score,
             risk_level=risk_level,
             rule_name="champion_model_v1",
             alert_message=(
@@ -238,6 +250,7 @@ class FraudAlertToJdbcRowMapper(MapFunction):
             alert.user_id,
             alert.source_event_id,
             alert.risk_score,
+            alert.challenger_score,
             alert.risk_level,
             alert.rule_name,    
             alert.alert_message,
@@ -259,11 +272,12 @@ def _jdbc_insert_sql() -> str:
             user_id,
             source_event_id,
             risk_score,
+            challenger_score,
             risk_level,
             rule_name,
             alert_message,
             detected_at
-        ) VALUES (?::uuid, ?, ?::uuid, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)
+        ) VALUES (?::uuid, ?, ?::uuid, ?, ?, ?::fraud_risk_level, ?, ?, ?::timestamptz)
     """
 
 
@@ -279,6 +293,7 @@ def _build_jdbc_sink() -> JdbcSink:
                     Types.STRING(),
                     Types.STRING(),
                     Types.STRING(),
+                    Types.DOUBLE(),
                     Types.DOUBLE(),
                     Types.STRING(),
                     Types.STRING(),
@@ -351,6 +366,7 @@ def build_pipeline(env: StreamExecutionEnvironment | None = None) -> StreamExecu
             Types.STRING(),
             Types.STRING(),
             Types.STRING(),
+            Types.DOUBLE(),
             Types.DOUBLE(),
             Types.STRING(),
             Types.STRING(),

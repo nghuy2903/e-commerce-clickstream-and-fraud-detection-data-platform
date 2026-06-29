@@ -361,7 +361,7 @@
                 <!-- Bottom Grid: Alerts + Chart -->
                 <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
                     <!-- Alerts Table -->
-                    <div class="xl:col-span-3 bg-white rounded-xl shadow-md flex flex-col min-h-[480px]">
+                    <div class="xl:col-span-3 bg-white rounded-xl shadow-md flex flex-col h-[480px]">
                         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <h2 class="text-lg font-semibold text-slate-800">Danh sách cảnh báo gian lận</h2>
@@ -392,7 +392,7 @@
                     </div>
 
                     <!-- MLOps Chart -->
-                    <div class="xl:col-span-2 bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[480px]">
+                    <div class="xl:col-span-2 bg-white rounded-xl shadow-md p-6 flex flex-col h-[480px]">
                         <div class="mb-4">
                             <h2 class="text-lg font-semibold text-slate-800">MLOps — Champion vs Challenger</h2>
                             <p class="text-xs text-slate-400 mt-0.5">Accuracy theo thời gian (7 ngày gần nhất)</p>
@@ -416,8 +416,8 @@
                 <!-- Model Divergence (Scatter Plot) -->
                 <div class="bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[500px]">
                     <div class="mb-4">
-                        <h2 class="text-lg font-semibold text-slate-800">Độ lệch mô hình (Model Divergence)</h2>
-                        <p class="text-xs text-slate-400 mt-0.5">Phân tích chéo Điểm Rủi ro (XGBoost) vs Điểm Bất thường (Isolation Forest)</p>
+                        <h2 class="text-lg font-semibold text-slate-800">Độ lệch mô hình</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Phân tích điểm rủi ro vs điểm bất thường (XGBoots vs Isolation Forest)</p>
                     </div>
                     <div class="flex-1 relative min-h-[380px]">
                         <canvas id="divergenceScatterPlot"></canvas>
@@ -441,7 +441,7 @@
                     <div class="bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[420px]">
                         <div class="mb-4">
                             <h2 class="text-lg font-semibold text-slate-800">Lưu lượng xử lý (System Throughput)</h2>
-                            <p class="text-xs text-slate-400 mt-0.5">Số lượng giao dịch (Events) xử lý mỗi phút (1 giờ qua)</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Số lượng giao dịch xử lý mỗi phút (1 giờ qua)</p>
                         </div>
                         <div id="throughputChart" class="flex-1 min-h-[320px]"></div>
                     </div>
@@ -449,8 +449,8 @@
                     <!-- Bottom-Left: Time-based Heatmap -->
                     <div class="bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[420px]">
                         <div class="mb-4">
-                            <h2 class="text-lg font-semibold text-slate-800">Hành vi giao dịch (Time-based Heatmap)</h2>
-                            <p class="text-xs text-slate-400 mt-0.5">Phân bố mật độ giao dịch theo Thứ và Giờ trong tuần</p>
+                            <h2 class="text-lg font-semibold text-slate-800">Hành vi giao dịch </h2>
+                            <p class="text-xs text-slate-400 mt-0.5">Phân bố mật độ giao dịch theo thứ và giờ trong tuần</p>
                         </div>
                         <div id="heatmapChart" class="flex-1 min-h-[320px]"></div>
                     </div>
@@ -459,7 +459,7 @@
                     <div class="bg-white rounded-xl shadow-md p-6 flex flex-col min-h-[420px]">
                         <div class="mb-4">
                             <h2 class="text-lg font-semibold text-slate-800">Giá trị tài sản bảo vệ</h2>
-                            <p class="text-xs text-slate-400 mt-0.5">Giá trị giao dịch Hợp lệ vs Bị chặn (7 ngày gần nhất)</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Giá trị giao dịch hợp lệ vs gian lận (7 ngày gần nhất)</p>
                         </div>
                         <div id="assetsChart" class="flex-1 min-h-[320px]"></div>
                     </div>
@@ -1177,7 +1177,7 @@
 
                     // 4. Delay 150ms between requests
                     if (index < totalRequests) {
-                        await new Promise(r => setTimeout(r, 150));
+                        await new Promise(r => setTimeout(r, 500));
                     }
                 }
 
@@ -1506,12 +1506,13 @@
                                 ticks: { font: { family: 'Inter', size: 11 }, color: '#94a3b8' },
                             },
                             y: {
-                                min: 80,
+                                min: 0,
                                 max: 100,
                                 grid: { color: '#f1f5f9' },
                                 ticks: {
                                     font: { family: 'Inter', size: 11 },
                                     color: '#94a3b8',
+                                    stepSize: 20,
                                     callback: function (value) { return value + '%'; },
                                 },
                             },
@@ -1595,7 +1596,7 @@
                 const chartData = {
                     datasets: [
                         {
-                            label: 'Bình thường (Normal)',
+                            label: 'Bình thường',
                             data: data.normal || [],
                             backgroundColor: '#10b981',
                             borderColor: '#059669',
@@ -1603,7 +1604,7 @@
                             pointHoverRadius: 8
                         },
                         {
-                            label: 'Gian lận kinh điển (Classic Fraud)',
+                            label: 'Gian lận',
                             data: data.classic || [],
                             backgroundColor: '#ef4444',
                             borderColor: '#dc2626',
@@ -1611,7 +1612,7 @@
                             pointHoverRadius: 9
                         },
                         {
-                            label: 'Zero-day Fraud (Bất thường cao)',
+                            label: 'Bất thường',
                             data: data.zeroday || [],
                             backgroundColor: '#8b5cf6',
                             borderColor: '#7c3aed',
@@ -1826,7 +1827,7 @@
                 if (state.assetsChart) {
                     state.assetsChart.updateSeries([
                         { name: 'Giao dịch hợp lệ', data: validValues },
-                        { name: 'Giao dịch bị chặn/Gian lận', data: blockedValues }
+                        { name: 'Giao dịch gian lận', data: blockedValues }
                     ]);
                     state.assetsChart.updateOptions({
                         xaxis: { categories: labels }
